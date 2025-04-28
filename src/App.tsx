@@ -16,10 +16,11 @@ import {
 } from "firebase/auth";
 import {
   ref,
-  uploadBytes,
   listAll,
   StorageReference,
   getBytes,
+  uploadBytesResumable,
+  UploadTaskSnapshot,
 } from "firebase/storage";
 import { auth, storage } from "./firebaseConfig";
 import "./App.css";
@@ -58,6 +59,12 @@ function ChatListPage({ user }: { user: User }) {
   const [listError, setListError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [currentUploadFile, setCurrentUploadFile] = useState<string | null>(
+    null
+  );
+  const [totalFilesToUpload, setTotalFilesToUpload] = useState<number>(0);
+  const [filesUploaded, setFilesUploaded] = useState<number>(0);
   const navigate = useNavigate();
 
   // Chat List Filter State
@@ -222,23 +229,86 @@ function ChatListPage({ user }: { user: User }) {
     if (!event.target.files || event.target.files.length === 0) {
       return;
     }
-    const file = event.target.files[0];
-    const storagePath = `user/${user.uid}/uploads/${file.name}`;
-    const storageRef = ref(storage, storagePath);
+    const filesToUpload = event.target.files;
+    const totalFiles = filesToUpload.length;
 
     setUploading(true);
     setUploadError(null);
-    try {
-      await uploadBytes(storageRef, file);
-      console.log("File uploaded successfully!");
-      // Optionally trigger a refresh of lists after upload, though function handles processing
-      // fetchLists(user.uid); // Or maybe just show a success message
-    } catch (err) {
-      console.error("File upload failed:", err);
-      setUploadError(getErrorMessage(err));
-    } finally {
-      setUploading(false);
+    setUploadProgress(0);
+    setCurrentUploadFile(null);
+    setTotalFilesToUpload(totalFiles);
+    setFilesUploaded(0);
+
+    for (let i = 0; i < totalFiles; i++) {
+      const file = filesToUpload[i];
+      const currentFileNumber = i + 1;
+      setCurrentUploadFile(`${file.name} (${currentFileNumber}/${totalFiles})`);
+      console.log(
+        `Uploading file ${currentFileNumber}/${totalFiles}: ${file.name}`
+      );
+
+      const storagePath = `user/${user.uid}/uploads/${file.name}`;
+      const storageRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      // Use a promise to wait for each upload to complete
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on(
+          "state_changed",
+          (snapshot: UploadTaskSnapshot) => {
+            // Calculate progress for the current file (optional to display granularly)
+            // const fileProgress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; // Removed unused variable
+            // console.log(`Upload progress for ${file.name}: ${fileProgress}%`);
+
+            // Calculate overall progress based on files completed + current file progress
+            const overallProgress =
+              ((filesUploaded +
+                snapshot.bytesTransferred / snapshot.totalBytes) /
+                totalFiles) *
+              100;
+            setUploadProgress(overallProgress);
+          },
+          (error) => {
+            // Handle unsuccessful uploads for this file
+            console.error(`Upload failed for ${file.name}:`, error);
+            // We could collect errors and show them at the end
+            // For now, we'll set a general error and stop further uploads
+            setUploadError(
+              `Upload failed for ${file.name}: ${getErrorMessage(error)}`
+            );
+            setCurrentUploadFile(null); // Clear current file
+            setUploading(false); // Stop overall upload process on first error
+            reject(error); // Reject the promise to break the loop
+          },
+          () => {
+            // Handle successful uploads on complete
+            console.log(`${file.name} uploaded successfully.`);
+            setFilesUploaded((prev) => prev + 1); // Increment completed count *after* success
+            resolve(); // Resolve the promise to continue to the next file
+          }
+        );
+      });
+
+      // If an error occurred in the promise, stop the loop
+      if (uploadError) {
+        break;
+      }
     }
+
+    // After the loop finishes (or breaks due to error)
+    if (!uploadError) {
+      console.log("All files uploaded successfully!");
+      setCurrentUploadFile(null);
+      // Optionally trigger a refresh or show a success message
+      // fetchLists(user.uid);
+    }
+    setUploading(false);
+    // Reset progress slightly after completion/error
+    // setTimeout(() => {
+    //    setUploadProgress(0);
+    //    setTotalFilesToUpload(0);
+    //    setFilesUploaded(0);
+    // }, 3000); // Clear after 3 seconds
   };
 
   // Handle clicking on a global search result
@@ -370,11 +440,34 @@ function ChatListPage({ user }: { user: User }) {
           onChange={handleFileUpload}
           disabled={uploading}
           accept=".zip"
+          multiple
         />
-        {uploading && <p>Uploading...</p>}
+        {uploading && (
+          <div>
+            <p>Uploading {totalFilesToUpload} file(s)...</p>
+            {currentUploadFile && <p>Current: {currentUploadFile}</p>}
+            <progress
+              value={uploadProgress}
+              max="100"
+              style={{ width: "100%" }}
+            />
+            <p>
+              {Math.round(uploadProgress)}% Complete ({filesUploaded}/
+              {totalFilesToUpload})
+            </p>
+          </div>
+        )}
         {uploadError && (
           <p style={{ color: "red" }}>Upload failed: {uploadError}</p>
         )}
+        {!uploading &&
+          filesUploaded > 0 &&
+          totalFilesToUpload > 0 &&
+          !uploadError && (
+            <p style={{ color: "green" }}>
+              Successfully uploaded {filesUploaded} file(s).
+            </p>
+          )}
       </div>
 
       {/* Collapsible Debug Panel */}
