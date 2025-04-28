@@ -5,6 +5,7 @@ exports[`parseChatTxt > should parse the example chat correctly and match snapsh
   {
     "attachment": null,
     "content": "You created group “Example Whatsapp Group”",
+    "direction": "ltr",
     "rawText": "[23/04/2025, 10:59:57] Example Whatsapp Group: ‎You created group “Example Whatsapp Group”
 ",
     "sender": "Example Whatsapp Group",
@@ -14,6 +15,7 @@ exports[`parseChatTxt > should parse the example chat correctly and match snapsh
   {
     "attachment": null,
     "content": "Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.",
+    "direction": "ltr",
     "rawText": "[23/04/2025, 10:59:57] Example Whatsapp Group: ‎Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.
 ",
     "sender": "Example Whatsapp Group",
@@ -23,6 +25,7 @@ exports[`parseChatTxt > should parse the example chat correctly and match snapsh
   {
     "attachment": null,
     "content": "Let’s write a few messages that I can use as an example for the whatsapp-history thing",
+    "direction": "ltr",
     "rawText": "[23/04/2025, 11:00:18] Yonatan Cale: Let’s write a few messages that I can use as an example for the whatsapp-history thing
 ",
     "sender": "Yonatan Cale",
@@ -32,6 +35,7 @@ exports[`parseChatTxt > should parse the example chat correctly and match snapsh
   {
     "attachment": "00000003-PHOTO-2025-04-23-11-01-19.jpg",
     "content": "",
+    "direction": "center",
     "rawText": "‎[23/04/2025, 11:01:19] Yonatan Cale: ‎<attached: 00000003-PHOTO-2025-04-23-11-01-19.jpg>
 ",
     "sender": "Yonatan Cale",
@@ -43,6 +47,7 @@ exports[`parseChatTxt > should parse the example chat correctly and match snapsh
     "content": "Some messages have one line
 
 Some have many",
+    "direction": "ltr",
     "rawText": "[23/04/2025, 11:01:48] Yonatan Cale: Some messages have one line
 
 Some have many
@@ -54,6 +59,7 @@ Some have many
   {
     "attachment": null,
     "content": "עדיף להציג הודעות בעברית מימין לשמאל",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 11:02:04] Yonatan Cale: עדיף להציג הודעות בעברית מימין לשמאל
 ",
     "sender": "Yonatan Cale",
@@ -64,6 +70,7 @@ Some have many
     "attachment": null,
     "content": "*כותרת*
 עושה בלאגן",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 16:44:11] דר' שקד: *כותרת*
 עושה בלאגן
 ",
@@ -74,6 +81,7 @@ Some have many
   {
     "attachment": null,
     "content": "🍨 אימוג׳י לפני כותרת",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 16:44:24] דר' שקד: 🍨 אימוג׳י לפני כותרת
 ",
     "sender": "דר' שקד",
@@ -83,6 +91,7 @@ Some have many
   {
     "attachment": null,
     "content": "אימוג׳י אחרי כותרת 🍨",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 16:44:32] דר' שקד: אימוג׳י אחרי כותרת 🍨
 ",
     "sender": "דר' שקד",
@@ -93,6 +102,7 @@ Some have many
     "attachment": null,
     "content": "🍨
 רק אימוג׳י",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 16:44:40] דר' שקד: 🍨
 רק אימוג׳י
 ",
@@ -103,6 +113,7 @@ Some have many
   {
     "attachment": null,
     "content": "כ",
+    "direction": "rtl",
     "rawText": "[23/04/2025, 16:44:49] דר' שקד: כ
 ",
     "sender": "דר' שקד",

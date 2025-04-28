@@ -1,6 +1,8 @@
 // src/chatParser.ts
 
-// --- Type Definition ---
+// --- Type Definitions ---
+export type TextDirection = "ltr" | "rtl" | "center";
+
 export type ParsedMessage = {
   startLine: number;
   rawText: string; // Keep raw text for now, maybe remove later
@@ -8,9 +10,34 @@ export type ParsedMessage = {
   sender: string | null;
   content: string;
   attachment: string | null;
+  direction: TextDirection;
 };
 
 // --- Parsing Helper Functions ---
+
+// Unicode character ranges
+const HEBREW_RANGE = /[֐-׿]/;
+const LATIN_RANGE = /[A-Za-z]/;
+// Add other RTL ranges if needed (Arabic: /[؀-ۿ]/, etc.)
+
+// Determines the primary text direction of a string
+const detectTextDirection = (text: string): TextDirection => {
+  if (!text) {
+    return "center"; // Or 'ltr'? Default for empty seems neutral.
+  }
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (HEBREW_RANGE.test(char)) {
+      return "rtl";
+    }
+    if (LATIN_RANGE.test(char)) {
+      return "ltr";
+    }
+    // Ignore neutral characters like spaces, punctuation, numbers, symbols for initial detection
+  }
+  // If no strong LTR or RTL characters were found
+  return "center"; // Treat messages with only symbols/numbers as center
+};
 
 // Parses [DATE, TIME] Sender: or [DATE, TIME] from the start of a single message's raw text
 // Returns timestamp, sender (if applicable), and the remaining text content
@@ -72,7 +99,7 @@ const parseAttachment = (
   return { attachment, remaining: finalRemaining };
 };
 
-// --- Main Parsing Function ---
+// --- Main Orchestrating Parsing Function ---
 export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
   const lines = rawContent.split("\n");
   const messages: ParsedMessage[] = [];
@@ -103,6 +130,9 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
       // 3. The rest is content
       const content = remainingAfterAttachment.trim(); // Final trim for content
 
+      // 4. Detect direction based on final content
+      const direction = detectTextDirection(content);
+
       messages.push({
         startLine: currentMessageStartLine,
         rawText: fullRawText, // Store original raw block
@@ -110,6 +140,7 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
         sender: sender,
         content: content,
         attachment: attachment,
+        direction: direction, // Add direction
       });
 
       // Reset for next message

@@ -145,6 +145,22 @@
   border-bottom-left-radius: 5px; /* Slightly flatten corner */
 }
 
+/* Text Direction Styles */
+.direction-ltr {
+    /* Default behavior, but explicit */
+    direction: ltr;
+    text-align: left;
+}
+.direction-rtl {
+    direction: rtl;
+    text-align: right;
+}
+.direction-center {
+    /* Direction still LTR for neutral chars, but text centered */
+    direction: ltr;
+    text-align: center;
+}
+
 /* Attachment Styles */
 .attachment-loading,
 .attachment-error {

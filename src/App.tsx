@@ -444,6 +444,8 @@ function ChatViewPage({ user }: { user: User }) {
             const messageClass = isMyMessage
               ? "message-item my-message"
               : "message-item other-message";
+            const directionClass = `direction-${message.direction}`;
+
             return (
               <div key={message.startLine} className={messageClass}>
                 <div className="message-bubble">
@@ -451,7 +453,7 @@ function ChatViewPage({ user }: { user: User }) {
                     <span className="sender">{message.sender || "System"}</span>
                     <span className="timestamp">{message.timestamp}</span>
                   </div>
-                  <div className="message-content">
+                  <div className={`message-content ${directionClass}`}>
                     {message.content && <p>{message.content}</p>}
                     {message.attachment && (
                       <AttachmentPreview attachmentName={message.attachment} />
