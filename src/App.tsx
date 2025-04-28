@@ -112,6 +112,14 @@ function ChatListPage({ user }: { user: User }) {
   const listenerFetchInProgress = useRef(false);
   const prevChatFoldersString = useRef<string | null>(null); // Store previous folders string
 
+  // --- Derived State for Autocomplete ---
+  const allParticipants = useMemo(() => {
+    if (allParsedMessages.length === 0) return [];
+    // Get all unique senders from all loaded messages
+    const senders = allParsedMessages.map((msg) => msg.sender).filter(Boolean); // Filter out null/empty
+    return Array.from(new Set(senders as string[])).sort(); // Unique and sorted
+  }, [allParsedMessages]); // Recompute only when all messages change
+
   // --- Function to fetch Folders from STORAGE ---
   const fetchFoldersFromStorage = useCallback(async (userId: string) => {
     const wasInitiallyEmpty = chatFolders.length === 0;
@@ -487,17 +495,21 @@ function ChatListPage({ user }: { user: User }) {
     <div className="page-container">
       {/* Section for Username - needed for MessageItem */}
       <div className="config-section">
-        <label htmlFor="usernameInputGlobal">
-          Your Username (for message display):{" "}
-        </label>
+        <label htmlFor="usernameInputGlobal">Your Username: </label>
         <input
           id="usernameInputGlobal"
           type="text"
           value={myUsername}
           onChange={handleUsernameChange}
           placeholder="Enter your exact chat name"
-          // Maybe provide participants from *all* chats? Too complex?
+          list="allParticipantsList" // Add list attribute for datalist
         />
+        {/* Add datalist for autocomplete suggestions */}
+        <datalist id="allParticipantsList">
+          {allParticipants.map((participant) => (
+            <option key={participant} value={participant} />
+          ))}
+        </datalist>
       </div>
 
       {/* Global Search Section */}
