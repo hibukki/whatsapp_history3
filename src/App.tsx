@@ -1,4 +1,11 @@
-import React, { useState, useEffect, ChangeEvent } from "react";
+import React, {
+  useState,
+  useEffect,
+  ChangeEvent,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import { Routes, Route, Link, useParams, useNavigate } from "react-router-dom"; // Import Router components
 import {
   onAuthStateChanged,
@@ -13,11 +20,12 @@ import {
   listAll,
   StorageReference,
   getBytes,
-  getDownloadURL,
 } from "firebase/storage";
 import { auth, storage } from "./firebaseConfig";
 import "./App.css";
 import { parseChatTxt, ParsedMessage } from "./chatParser"; // Import parser
+import { searchMessages } from "./chatSearchUtils"; // Import search utility
+import { MessageItem } from "./components/MessageItem"; // Import MessageItem
 
 // Helper function to recursively list all files (used by fetchExtractedFiles and fetchChatFiles for debug list)
 const listAllFilesHelper = async (ref: StorageReference): Promise<string[]> => {
@@ -39,6 +47,10 @@ const getErrorMessage = (error: unknown): string => {
   return String(error);
 };
 
+// --- Type Definitions ---
+// Added optional chatFolderName
+type GlobalSearchResult = ParsedMessage & { chatFolderName: string };
+
 // Component for the Chat List Page (/)
 function ChatListPage({ user }: { user: User }) {
   const [chatFolders, setChatFolders] = useState<string[]>([]);
@@ -51,6 +63,23 @@ function ChatListPage({ user }: { user: User }) {
   const [files, setFiles] = useState<string[]>([]);
   const [extractedFiles, setExtractedFiles] = useState<string[]>([]);
   const [chatFiles, setChatFiles] = useState<string[]>([]);
+
+  const navigate = useNavigate(); // For navigating from search results
+
+  // Global Search State
+  const [globalSearchTerm, setGlobalSearchTerm] = useState<string>("");
+  const [isGlobalSearching, setIsGlobalSearching] = useState<boolean>(false);
+  const [globalSearchResults, setGlobalSearchResults] = useState<
+    GlobalSearchResult[]
+  >([]);
+  const [globalSearchError, setGlobalSearchError] = useState<string | null>(
+    null
+  );
+  // Store all messages fetched for global search to avoid refetching unless necessary
+  const [allParsedMessages, setAllParsedMessages] = useState<
+    GlobalSearchResult[]
+  >([]);
+  const [myUsername, setMyUsername] = useState<string>(""); // Need username for message item display
 
   // Fetch chat folders and debug file lists
   const fetchLists = async (userId: string) => {
@@ -88,9 +117,93 @@ function ChatListPage({ user }: { user: User }) {
     }
   };
 
+  // Fetch and parse *all* chats for global search
+  const fetchAndParseAllChats = useCallback(
+    async (userId: string, folders: string[]) => {
+      console.log("Fetching all chats for global search...");
+      setIsGlobalSearching(true);
+      setGlobalSearchError(null);
+      setGlobalSearchResults([]); // Clear previous results
+      const allMessages: GlobalSearchResult[] = [];
+
+      try {
+        const promises = folders.map(async (folderName) => {
+          const chatFilePath = `user/${userId}/chats/${folderName}/_chat.txt`;
+          const chatFileRef = ref(storage, chatFilePath);
+          try {
+            const fileBytes = await getBytes(chatFileRef);
+            const rawContent = new TextDecoder().decode(fileBytes);
+            const parsed = parseChatTxt(rawContent);
+            // Add folderName to each message
+            return parsed.map((msg) => ({
+              ...msg,
+              chatFolderName: folderName,
+            }));
+          } catch (err) {
+            console.error(`Failed to fetch/parse ${folderName}:`, err);
+            // Return empty array for this chat on error, maybe show partial error?
+            return [];
+          }
+        });
+
+        const results = await Promise.all(promises);
+        results.forEach((chatMessages) => allMessages.push(...chatMessages));
+        setAllParsedMessages(allMessages); // Cache all messages
+        console.log(
+          `Fetched and parsed ${allMessages.length} total messages from ${folders.length} chats.`
+        );
+        // Trigger initial search if term already exists
+        if (globalSearchTerm) {
+          setGlobalSearchResults(searchMessages(allMessages, globalSearchTerm));
+        }
+      } catch (err) {
+        // Catch errors from Promise.all itself (unlikely here)
+        console.error("Error fetching all chats:", err);
+        setGlobalSearchError(
+          "An unexpected error occurred while fetching all chats."
+        );
+      } finally {
+        setIsGlobalSearching(false);
+      }
+    },
+    [globalSearchTerm]
+  ); // Re-run fetch if needed? Maybe only fetch once?
+
+  // Fetch initial folder list
   useEffect(() => {
     fetchLists(user.uid);
-  }, [user.uid]); // Fetch lists when component mounts or user changes
+  }, [user.uid]);
+
+  // Fetch all chats *once* when folders are loaded
+  useEffect(() => {
+    if (
+      chatFolders.length > 0 &&
+      allParsedMessages.length === 0 &&
+      !isGlobalSearching
+    ) {
+      fetchAndParseAllChats(user.uid, chatFolders);
+    }
+  }, [
+    chatFolders,
+    user.uid,
+    allParsedMessages.length,
+    isGlobalSearching,
+    fetchAndParseAllChats,
+  ]);
+
+  // Update search results when term changes
+  useEffect(() => {
+    if (!globalSearchTerm) {
+      setGlobalSearchResults([]);
+      return;
+    }
+    if (allParsedMessages.length > 0) {
+      // Generic function preserves the GlobalSearchResult type
+      setGlobalSearchResults(
+        searchMessages(allParsedMessages, globalSearchTerm)
+      );
+    }
+  }, [globalSearchTerm, allParsedMessages]);
 
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
@@ -115,8 +228,84 @@ function ChatListPage({ user }: { user: User }) {
     }
   };
 
+  // Handle clicking on a global search result
+  const handleGlobalResultClick = (message: GlobalSearchResult) => {
+    navigate(
+      `/chats/${encodeURIComponent(message.chatFolderName)}/messages/${
+        message.startLine
+      }`
+    );
+  };
+
   return (
     <div className="page-container">
+      {/* Section for Username - needed for MessageItem */}
+      <div className="config-section">
+        <label htmlFor="usernameInputGlobal">
+          Your Username (for message display):{" "}
+        </label>
+        <input
+          id="usernameInputGlobal"
+          type="text"
+          value={myUsername}
+          onChange={(e) => setMyUsername(e.target.value)}
+          placeholder="Enter your exact chat name"
+          // Maybe provide participants from *all* chats? Too complex?
+        />
+      </div>
+
+      {/* Global Search Section */}
+      <div className="global-search-section file-section">
+        <h2>Search All Chats</h2>
+        <input
+          type="search"
+          value={globalSearchTerm}
+          onChange={(e) => setGlobalSearchTerm(e.target.value)}
+          placeholder="Search across all chats..."
+          disabled={
+            isGlobalSearching ||
+            (allParsedMessages.length === 0 && chatFolders.length > 0)
+          }
+        />
+        {isGlobalSearching && <p>Loading all chat data for search...</p>}
+        {globalSearchError && (
+          <p style={{ color: "red" }}>{globalSearchError}</p>
+        )}
+        {globalSearchTerm && !isGlobalSearching && (
+          <p>
+            {globalSearchResults.length} results found across{" "}
+            {chatFolders.length} chats for "{globalSearchTerm}"
+          </p>
+        )}
+      </div>
+
+      {/* Global Search Results */}
+      {globalSearchResults.length > 0 && (
+        <div className="message-list global-search-results">
+          {globalSearchResults.map((message) => (
+            <div
+              key={`${message.chatFolderName}-${message.startLine}`}
+              className="global-result-item"
+            >
+              <small>
+                From:{" "}
+                <Link
+                  to={`/chats/${encodeURIComponent(message.chatFolderName)}`}
+                >
+                  {message.chatFolderName}
+                </Link>
+              </small>
+              <MessageItem
+                message={message}
+                myUsername={myUsername}
+                onClick={() => handleGlobalResultClick(message)}
+                isClickable={true}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
       <h2>Available Chats</h2>
       {loadingFolders && <p>Loading chats...</p>}
       {listError && (
@@ -217,101 +406,45 @@ function ChatViewPage({ user }: { user: User }) {
   const [myUsername, setMyUsername] = useState<string>("");
   const [parsingError, setParsingError] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState<boolean>(true);
-  const [attachmentUrls, setAttachmentUrls] = useState<
-    Record<string, string | null>
-  >({}); // filename -> URL or null (error)
-  const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(
-    new Set()
-  ); // filenames currently loading
   const [searchTerm, setSearchTerm] = useState<string>("");
-
-  // Ref for the message list container to help with scrolling checks
-  const messageListRef = React.useRef<HTMLDivElement>(null);
-
-  // --- Helper to check if filename is an image ---
-  const isImageFile = (filename: string | null): boolean => {
-    if (!filename) return false;
-    const extension = filename.split(".").pop()?.toLowerCase();
-    return (
-      !!extension && ["jpg", "jpeg", "png", "gif", "webp"].includes(extension)
-    );
-  };
-
-  // --- Function to get/cache attachment URL ---
-  const getAttachmentUrl = async (
-    userId: string,
-    folderName: string,
-    attachmentName: string
-  ): Promise<string | null> => {
-    const storagePath = `user/${userId}/chats/${folderName}/${attachmentName}`;
-    // Return cached URL if available
-    if (attachmentUrls[storagePath] !== undefined) {
-      return attachmentUrls[storagePath];
-    }
-
-    // Prevent fetching multiple times if already loading
-    if (loadingAttachments.has(storagePath)) {
-      return null; // Or return a placeholder? Indicate loading?
-    }
-
-    setLoadingAttachments((prev) => new Set(prev).add(storagePath));
-    console.log(`Fetching download URL for: ${storagePath}`);
-
-    try {
-      const attachmentRef = ref(storage, storagePath);
-      const url = await getDownloadURL(attachmentRef);
-      setAttachmentUrls((prev) => ({ ...prev, [storagePath]: url }));
-      return url;
-    } catch (error) {
-      // Specify error type if possible, e.g., FirebaseError
-      console.error(`Failed to get download URL for ${storagePath}:`, error);
-      // Cache null to indicate error and prevent refetching
-      setAttachmentUrls((prev) => ({ ...prev, [storagePath]: null }));
-      return null;
-    } finally {
-      setLoadingAttachments((prev) => {
-        const next = new Set(prev);
-        next.delete(storagePath);
-        return next;
-      });
-    }
-  };
+  const messageListRef = useRef<HTMLDivElement>(null);
 
   // Fetch and Parse function
-  const fetchAndParseChat = async (userId: string, folderName: string) => {
-    const chatFilePath = `user/${userId}/chats/${folderName}/_chat.txt`;
-    const chatFileRef = ref(storage, chatFilePath);
-    setParsedMessages([]);
-    setParsingError(null);
-    setLoadingChat(true);
-    setAttachmentUrls({}); // Clear attachment URLs when chat changes
-    setLoadingAttachments(new Set());
-
-    console.log(`Fetching and parsing: ${chatFilePath}`);
-    try {
-      const fileBytes = await getBytes(chatFileRef);
-      const rawContent = new TextDecoder().decode(fileBytes);
-      console.log(`Fetched ${rawContent.length} characters.`);
-      const parsed = parseChatTxt(rawContent);
-      console.log(`Parsed into ${parsed.length} messages.`);
-      setParsedMessages(parsed);
-
-      // Derive participants from parsed messages
-      const uniqueSenders = Array.from(
-        new Set(parsed.map((msg) => msg.sender).filter(Boolean))
-      ) as string[];
-      setParticipants(uniqueSenders);
-    } catch (err) {
-      console.error(`Failed to fetch or parse ${chatFilePath}:`, err);
-      setParsingError(
-        `Failed to load chat '${folderName}': ${getErrorMessage(err)}`
-      );
+  const fetchAndParseChat = useCallback(
+    async (userId: string, folderName: string) => {
+      const chatFilePath = `user/${userId}/chats/${folderName}/_chat.txt`;
+      const chatFileRef = ref(storage, chatFilePath);
       setParsedMessages([]);
-      setParticipants([]);
-    } finally {
-      setLoadingChat(false);
-    }
-  };
+      setParsingError(null);
+      setLoadingChat(true);
+
+      console.log(`Fetching and parsing: ${chatFilePath}`);
+      try {
+        const fileBytes = await getBytes(chatFileRef);
+        const rawContent = new TextDecoder().decode(fileBytes);
+        console.log(`Fetched ${rawContent.length} characters.`);
+        const parsed = parseChatTxt(rawContent);
+        console.log(`Parsed into ${parsed.length} messages.`);
+        setParsedMessages(parsed);
+
+        // Derive participants from parsed messages
+        const uniqueSenders = Array.from(
+          new Set(parsed.map((msg) => msg.sender).filter(Boolean))
+        ) as string[];
+        setParticipants(uniqueSenders);
+      } catch (err) {
+        console.error(`Failed to fetch or parse ${chatFilePath}:`, err);
+        setParsingError(
+          `Failed to load chat '${folderName}': ${getErrorMessage(err)}`
+        );
+        setParsedMessages([]);
+        setParticipants([]);
+      } finally {
+        setLoadingChat(false);
+      }
+    },
+    []
+  ); // useCallback dependency
 
   useEffect(() => {
     if (chatFolderName && user) {
@@ -328,26 +461,17 @@ function ChatViewPage({ user }: { user: User }) {
       setParticipants([]);
       setParsingError(null);
       // myUsername persists between chats
-      setAttachmentUrls({}); // Also clear URLs on unmount/change
-      setLoadingAttachments(new Set());
     };
   }, [chatFolderName, user]); // Rerun on folder change or user change
 
   // --- Filtered Messages ---
-  const messagesToDisplay = React.useMemo(() => {
-    // If navigating to a specific message, always show unfiltered list initially
+  const messagesToDisplay = useMemo(() => {
     if (startLineParam) {
       return parsedMessages;
     }
-    // Otherwise, filter based on search term
-    if (!searchTerm) {
-      return parsedMessages; // No filter applied
-    }
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    return parsedMessages.filter((message) =>
-      message.rawText.toLowerCase().includes(lowerCaseSearchTerm)
-    );
-  }, [parsedMessages, searchTerm, startLineParam]); // Depend on startLineParam too
+    // Generic function works fine with ParsedMessage[] too
+    return searchMessages(parsedMessages, searchTerm);
+  }, [parsedMessages, searchTerm, startLineParam]);
 
   // --- Scrolling Effect ---
   useEffect(() => {
@@ -377,83 +501,6 @@ function ChatViewPage({ user }: { user: User }) {
       }
     }
   }, [startLineParam, messagesToDisplay]); // Rerun when param changes or messages are loaded
-
-  // Component to render individual attachment
-  const AttachmentPreview = ({
-    attachmentName,
-  }: {
-    attachmentName: string | null;
-  }) => {
-    const [url, setUrl] = useState<string | null | undefined>(undefined); // undefined = not yet fetched
-
-    useEffect(() => {
-      if (attachmentName && user && chatFolderName) {
-        // Check cache first
-        const storagePath = `user/${user.uid}/chats/${chatFolderName}/${attachmentName}`;
-        const cachedUrl = attachmentUrls[storagePath];
-        if (cachedUrl !== undefined) {
-          setUrl(cachedUrl);
-        } else {
-          // Fetch URL if not cached
-          getAttachmentUrl(user.uid, chatFolderName, attachmentName).then(
-            setUrl
-          );
-        }
-      }
-    }, [attachmentName, user, chatFolderName]); // Re-fetch if attachment/user/folder changes
-
-    if (!attachmentName) return null;
-
-    const isLoading = loadingAttachments.has(
-      `user/${user?.uid}/chats/${chatFolderName}/${attachmentName}`
-    );
-
-    if (url === undefined || isLoading) {
-      return (
-        <p className="attachment-loading">
-          📎 Loading attachment: {attachmentName}...
-        </p>
-      );
-    }
-
-    if (url === null) {
-      // Error fetching URL
-      return (
-        <p className="attachment-error">
-          📎 Error loading attachment: {attachmentName}
-        </p>
-      );
-    }
-
-    if (isImageFile(attachmentName)) {
-      return (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`View ${attachmentName}`}
-        >
-          <img
-            src={url}
-            alt={attachmentName}
-            className="attachment-image-preview"
-          />
-        </a>
-      );
-    } else {
-      // Link for non-image files
-      return (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="attachment-link"
-        >
-          📎 Download: {attachmentName}
-        </a>
-      );
-    }
-  };
 
   return (
     <div className="page-container">
@@ -503,22 +550,13 @@ function ChatViewPage({ user }: { user: User }) {
           No messages found in this chat file, or the file is empty/invalid.
         </p>
       )}
-      {/* Render messages using messagesToDisplay */}
+      {/* Render messages using MessageItem component */}
       {messagesToDisplay.length > 0 && (
         <div className="message-list" ref={messageListRef}>
           {messagesToDisplay.map((message) => {
-            const isMyMessage =
-              message.sender === myUsername && myUsername !== "";
-            const messageClass = isMyMessage
-              ? "message-item my-message"
-              : "message-item other-message";
-            const directionClass = `direction-${message.direction}`;
-
             // --- Click Handler for Navigation ---
             const handleMessageClick = () => {
-              // Only navigate if a search term is active (i.e., list is filtered)
               if (searchTerm && chatFolderName) {
-                console.log(`Navigating to message ${message.startLine}`);
                 navigate(
                   `/chats/${encodeURIComponent(chatFolderName)}/messages/${
                     message.startLine
@@ -528,23 +566,13 @@ function ChatViewPage({ user }: { user: User }) {
             };
 
             return (
-              <div
+              <MessageItem
                 key={message.startLine}
-                id={`message-${message.startLine}`} // Add ID for scrolling
-                className={messageClass}
-                onClick={handleMessageClick} // Add click handler
-                title={searchTerm ? "Go to this message in full chat" : ""} // Add tooltip
-                style={{ cursor: searchTerm ? "pointer" : "default" }} // Indicate clickable
-              >
-                <div className="message-bubble">
-                  <div className={`message-content ${directionClass}`}>
-                    {message.content && <p>{message.content}</p>}
-                    {message.attachment && (
-                      <AttachmentPreview attachmentName={message.attachment} />
-                    )}
-                  </div>
-                </div>
-              </div>
+                message={message}
+                myUsername={myUsername}
+                onClick={handleMessageClick}
+                isClickable={!!searchTerm} // Clickable only if search term exists
+              />
             );
           })}
         </div>
