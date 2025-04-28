@@ -144,3 +144,46 @@
   border: 1px solid #e9e9eb;
   border-bottom-left-radius: 5px; /* Slightly flatten corner */
 }
+
+/* Debug Panel Styles */
+.debug-panel {
+    margin-top: 30px;
+    border: 1px dashed #aaa;
+    border-radius: 5px;
+}
+
+.debug-panel summary {
+    padding: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    background-color: #f0f0f0;
+    border-bottom: 1px dashed #aaa; /* Separator when closed */
+}
+
+.debug-panel[open] summary {
+    border-bottom: 1px dashed #aaa;
+}
+
+.debug-panel .debug-content {
+    padding: 15px;
+}
+
+.app-header {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.page-container {
+    text-align: left; /* Align content left within page sections */
+}
+
+
+ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+li {
+    margin-bottom: 5px;
+}
