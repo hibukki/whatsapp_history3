@@ -1,0 +1,102 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`parseChatTxt > should parse the example chat correctly and match snapshot 1`] = `
+[
+  {
+    "attachment": null,
+    "content": "You created group “Example Whatsapp Group”",
+    "rawText": "[23/04/2025, 10:59:57] Example Whatsapp Group: ‎You created group “Example Whatsapp Group”",
+    "sender": "Example Whatsapp Group",
+    "startLine": 1,
+    "timestamp": "23/04/2025, 10:59:57",
+  },
+  {
+    "attachment": null,
+    "content": "Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.",
+    "rawText": "[23/04/2025, 10:59:57] Example Whatsapp Group: ‎Messages and calls are end-to-end encrypted. Only people in this chat can read, listen to, or share them.",
+    "sender": "Example Whatsapp Group",
+    "startLine": 2,
+    "timestamp": "23/04/2025, 10:59:57",
+  },
+  {
+    "attachment": null,
+    "content": "Let’s write a few messages that I can use as an example for the whatsapp-history thing",
+    "rawText": "[23/04/2025, 11:00:18] Yonatan Cale: Let’s write a few messages that I can use as an example for the whatsapp-history thing",
+    "sender": "Yonatan Cale",
+    "startLine": 3,
+    "timestamp": "23/04/2025, 11:00:18",
+  },
+  {
+    "attachment": null,
+    "content": "[23/04/2025, 11:01:19] Yonatan Cale: ‎<attached: 00000003-PHOTO-2025-04-23-11-01-19.jpg>",
+    "rawText": "‎[23/04/2025, 11:01:19] Yonatan Cale: ‎<attached: 00000003-PHOTO-2025-04-23-11-01-19.jpg>",
+    "sender": "Yonatan Cale",
+    "startLine": 4,
+    "timestamp": "23/04/2025, 11:01:19",
+  },
+  {
+    "attachment": null,
+    "content": "Some messages have one line
+
+Some have many",
+    "rawText": "[23/04/2025, 11:01:48] Yonatan Cale: Some messages have one line
+
+Some have many",
+    "sender": "Yonatan Cale",
+    "startLine": 5,
+    "timestamp": "23/04/2025, 11:01:48",
+  },
+  {
+    "attachment": null,
+    "content": "עדיף להציג הודעות בעברית מימין לשמאל",
+    "rawText": "[23/04/2025, 11:02:04] Yonatan Cale: עדיף להציג הודעות בעברית מימין לשמאל",
+    "sender": "Yonatan Cale",
+    "startLine": 8,
+    "timestamp": "23/04/2025, 11:02:04",
+  },
+  {
+    "attachment": null,
+    "content": "*כותרת*
+עושה בלאגן",
+    "rawText": "[23/04/2025, 16:44:11] דר' שקד: *כותרת*
+עושה בלאגן",
+    "sender": "דר' שקד",
+    "startLine": 9,
+    "timestamp": "23/04/2025, 16:44:11",
+  },
+  {
+    "attachment": null,
+    "content": "🍨 אימוג׳י לפני כותרת",
+    "rawText": "[23/04/2025, 16:44:24] דר' שקד: 🍨 אימוג׳י לפני כותרת",
+    "sender": "דר' שקד",
+    "startLine": 11,
+    "timestamp": "23/04/2025, 16:44:24",
+  },
+  {
+    "attachment": null,
+    "content": "אימוג׳י אחרי כותרת 🍨",
+    "rawText": "[23/04/2025, 16:44:32] דר' שקד: אימוג׳י אחרי כותרת 🍨",
+    "sender": "דר' שקד",
+    "startLine": 12,
+    "timestamp": "23/04/2025, 16:44:32",
+  },
+  {
+    "attachment": null,
+    "content": "🍨
+רק אימוג׳י",
+    "rawText": "[23/04/2025, 16:44:40] דר' שקד: 🍨
+רק אימוג׳י",
+    "sender": "דר' שקד",
+    "startLine": 13,
+    "timestamp": "23/04/2025, 16:44:40",
+  },
+  {
+    "attachment": null,
+    "content": "כ",
+    "rawText": "[23/04/2025, 16:44:49] דר' שקד: כ",
+    "sender": "דר' שקד",
+    "startLine": 15,
+    "timestamp": "23/04/2025, 16:44:49",
+  },
+]
+`;
