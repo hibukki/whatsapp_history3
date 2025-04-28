@@ -52,11 +52,13 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
     #    return
     user_id = parts[1] # Path is user/{user_id}/uploads/{filename}.zip
     zip_filename = parts[-1]
+    # --- Get zip filename without extension for subfolder ---
+    zip_name_base = os.path.splitext(zip_filename)[0]
 
     # Prevent infinite loops by ignoring files processed into the extracted directory
-    # Check based on the expected output path format
-    if parts[2] == "extracted":
-        logging.info(f"Skipping file {file_path}: File is in an extracted directory.")
+    # or the chats directory
+    if parts[2] == "extracted" or parts[2] == "chats":
+        logging.info(f"Skipping file {file_path}: File is in an intermediate or final directory.")
         return
 
     storage_client = storage.bucket(bucket_name)
@@ -92,7 +94,7 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
             return
 
         # Upload extracted files
-        logging.info(f"Uploading extracted files to user/{user_id}/extracted/")
+        logging.info(f"Uploading extracted files to user/{user_id}/extracted/{zip_name_base}/")
         upload_count = 0
         for root, _, files in os.walk(temp_dir):
             for filename in files:
@@ -102,8 +104,8 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
                 local_file_path = os.path.join(root, filename)
                 # Create relative path for storage to maintain directory structure within the zip
                 relative_path = os.path.relpath(local_file_path, temp_dir)
-                # --- Adjusted destination path ---
-                destination_blob_name = f"user/{user_id}/extracted/{relative_path}"
+                # --- Adjusted destination path with zip name subfolder ---
+                destination_blob_name = f"user/{user_id}/extracted/{zip_name_base}/{relative_path}"
 
                 destination_blob = storage_client.blob(destination_blob_name)
                 try:
@@ -113,7 +115,54 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
                 except Exception as e:
                     logging.error(f"Failed to upload {local_file_path} to {destination_blob_name}: {e}")
 
-        logging.info(f"Finished processing {file_path}. Uploaded {upload_count} files.")
+        logging.info(f"Finished extracting {file_path}. Uploaded {upload_count} files to user/{user_id}/extracted/{zip_name_base}/")
+
+        # --- Check for _chat.txt and copy if exists ---
+        extracted_chat_file_path = f"user/{user_id}/extracted/{zip_name_base}/_chat.txt"
+        chat_file_blob = storage_client.blob(extracted_chat_file_path)
+
+        if chat_file_blob.exists():
+            logging.info(f"Found {extracted_chat_file_path}. Copying extracted folder to chats/.")
+            copy_count = 0
+            source_prefix = f"user/{user_id}/extracted/{zip_name_base}/"
+            destination_prefix = f"user/{user_id}/chats/{zip_name_base}/"
+
+            try:
+                # List all blobs in the extracted subfolder
+                blobs_to_copy = list(storage_client.list_blobs(prefix=source_prefix))
+                if not blobs_to_copy:
+                    logging.warning(f"_chat.txt exists but no blobs found under prefix {source_prefix} to copy.")
+
+                for blob in blobs_to_copy:
+                    # Calculate destination path
+                    relative_blob_path = blob.name[len(source_prefix):] # Get path relative to source prefix
+                    destination_blob_path = f"{destination_prefix}{relative_blob_path}"
+                    destination_blob = storage_client.blob(destination_blob_path)
+
+                    # Perform the copy
+                    # Rewrite preserves metadata like content type
+                    token, bytes_rewritten, total_bytes = destination_blob.rewrite(blob)
+                    while token is not None:
+                         # Handle large files that require multiple rewrite calls (though unlikely for chat files)
+                        token, bytes_rewritten, total_bytes = destination_blob.rewrite(blob, token=token)
+
+                    logging.info(f"Copied {blob.name} to {destination_blob_path}")
+                    copy_count += 1
+
+                logging.info(f"Finished copying {copy_count} files to {destination_prefix}")
+                # Optionally: Delete the extracted folder after successful copy?
+                # logging.info(f"Deleting intermediate extracted folder: {source_prefix}")
+                # for blob in blobs_to_copy:
+                #     try:
+                #         blob.delete()
+                #         logging.info(f"Deleted {blob.name}")
+                #     except Exception as e:
+                #         logging.error(f"Failed to delete blob {blob.name}: {e}")
+
+            except Exception as e:
+                logging.error(f"Error during copy from {source_prefix} to {destination_prefix}: {e}", exc_info=True)
+        else:
+            logging.info(f"Did not find {extracted_chat_file_path}. No copy to chats/ performed.")
 
     # Optionally delete the original zip file after successful extraction
     # logging.info(f"Deleting original zip file: {file_path}")
