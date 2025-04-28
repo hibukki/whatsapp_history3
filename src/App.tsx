@@ -13,19 +13,11 @@ import {
   listAll,
   StorageReference,
   getBytes,
+  getDownloadURL,
 } from "firebase/storage";
 import { auth, storage } from "./firebaseConfig";
 import "./App.css";
-
-// Define the message type
-type ParsedMessage = {
-  startLine: number;
-  rawText: string;
-  timestamp: string | null;
-  sender: string | null;
-  content: string;
-  attachment: string | null;
-};
+import { parseChatTxt, ParsedMessage } from "./chatParser"; // Import parser
 
 // Helper function to recursively list all files (used by fetchExtractedFiles and fetchChatFiles for debug list)
 const listAllFilesHelper = async (ref: StorageReference): Promise<string[]> => {
@@ -37,145 +29,6 @@ const listAllFilesHelper = async (ref: StorageReference): Promise<string[]> => {
     files = files.concat(subFiles);
   }
   return files;
-};
-
-// Chat Parsing Logic
-const parseChatTxt = (rawContent: string): ParsedMessage[] => {
-  const lines = rawContent.split("\n");
-  const messages: ParsedMessage[] = [];
-  let currentMessageLines: string[] = [];
-  let currentMessageStartLine: number | null = null;
-  let currentMessageMeta = {
-    timestamp: null as string | null,
-    sender: null as string | null,
-  };
-
-  // --- Helper: Extract Content & Attachment ---
-  const extractContentAndAttachment = (
-    msgLines: string[],
-    meta: { timestamp: string | null; sender: string | null }
-  ) => {
-    let content = msgLines.join("\n"); // Start with raw joined lines
-    let attachment: string | null = null;
-    const attachmentRegex = /^\u200E?<attached: (.*)>$/;
-
-    // 1. Remove metadata prefix (if applicable) from the effective content
-    // We do this *before* checking for attachments on the last line
-    if (meta.timestamp) {
-      const prefix = `[${meta.timestamp}] ${
-        meta.sender ? meta.sender + ": " : ""
-      }`;
-      if (content.startsWith(prefix)) {
-        content = content.substring(prefix.length);
-      }
-      // Handle system messages where prefix has no sender
-      else if (!meta.sender && content.startsWith(`[${meta.timestamp}] `)) {
-        content = content.substring(`[${meta.timestamp}] `.length);
-      }
-    }
-    // Trim leading/trailing whitespace that might result from prefix removal or original lines
-    content = content.trim();
-
-    // 2. Check for attachment on the *original* last line
-    const originalLastLine = msgLines[msgLines.length - 1] || "";
-    const attachmentMatch = originalLastLine.match(attachmentRegex);
-
-    if (attachmentMatch) {
-      attachment = attachmentMatch[1];
-      // 3. If attachment found, refine content by removing the last line *if appropriate*
-      // Check if the effective content *ends with* the attachment line
-      // Need to handle potential whitespace differences
-      const contentEndsWithAttachmentLine = content.endsWith(
-        originalLastLine.trim()
-      );
-
-      if (contentEndsWithAttachmentLine) {
-        content = content
-          .substring(0, content.length - originalLastLine.length)
-          .trimEnd();
-      }
-      // If removing the last line leaves content empty, set it explicitly
-      if (!content.trim()) {
-        content = "";
-      }
-    }
-
-    return { content, attachment };
-  };
-
-  // Regex V1: Basic message start with timestamp and sender
-  const messageStartRegex =
-    /^(\u200E)?\[(\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2})\] (.*?): (.*)$/;
-  // Regex V2: System message (no sender)
-  const systemMessageRegex =
-    /^(\u200E)?\[(\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2})\] (.*)$/;
-
-  // --- Helper: Finalize and Reset ---
-  const finalizeCurrentMessage = () => {
-    if (currentMessageStartLine !== null && currentMessageLines.length > 0) {
-      const { content, attachment } = extractContentAndAttachment(
-        currentMessageLines,
-        currentMessageMeta
-      );
-      const fullRawText = currentMessageLines.join("\n").trimEnd();
-
-      messages.push({
-        startLine: currentMessageStartLine,
-        rawText: fullRawText, // Keep original lines joined for raw view if needed
-        timestamp: currentMessageMeta.timestamp,
-        sender: currentMessageMeta.sender,
-        content: content, // Use processed content
-        attachment: attachment,
-      });
-
-      // Reset state for the next message
-      currentMessageLines = [];
-      currentMessageStartLine = null;
-      currentMessageMeta = { timestamp: null, sender: null };
-    }
-  };
-
-  // --- Main Parsing Loop ---
-  lines.forEach((line, index) => {
-    const lineNumber = index + 1; // 1-based line number
-    const trimmedLine = line.trimEnd(); // Keep leading whitespace for potential formatting, remove trailing
-    let handledAsStartOfMessage = false;
-
-    // Try matching standard message first
-    const match = trimmedLine.match(messageStartRegex);
-    if (match) {
-      finalizeCurrentMessage(); // Finalize previous before starting new
-      currentMessageStartLine = lineNumber;
-      currentMessageMeta = { timestamp: match[2], sender: match[3] };
-      // Add the *original* untrimmed line to preserve potential leading whitespace
-      currentMessageLines.push(line);
-      handledAsStartOfMessage = true;
-    }
-
-    // If not standard, try matching system message
-    if (!handledAsStartOfMessage) {
-      const systemMatch = trimmedLine.match(systemMessageRegex);
-      if (systemMatch) {
-        finalizeCurrentMessage(); // Finalize previous before starting new
-        currentMessageStartLine = lineNumber;
-        currentMessageMeta = { timestamp: systemMatch[2], sender: null }; // No sender
-        currentMessageLines.push(line); // Add original untrimmed line
-        handledAsStartOfMessage = true;
-      }
-    }
-
-    // If it wasn't a starting line, and we have an active message, append
-    if (!handledAsStartOfMessage && currentMessageStartLine !== null) {
-      // Add the *original* untrimmed line
-      currentMessageLines.push(line);
-    }
-    // Ignore lines before the first valid message starts
-  });
-
-  // Finalize the very last message after the loop
-  finalizeCurrentMessage();
-
-  return messages;
 };
 
 // Error message helper
@@ -363,6 +216,61 @@ function ChatViewPage({ user }: { user: User }) {
   const [myUsername, setMyUsername] = useState<string>("");
   const [parsingError, setParsingError] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState<boolean>(true);
+  const [attachmentUrls, setAttachmentUrls] = useState<
+    Record<string, string | null>
+  >({}); // filename -> URL or null (error)
+  const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(
+    new Set()
+  ); // filenames currently loading
+
+  // --- Helper to check if filename is an image ---
+  const isImageFile = (filename: string | null): boolean => {
+    if (!filename) return false;
+    const extension = filename.split(".").pop()?.toLowerCase();
+    return (
+      !!extension && ["jpg", "jpeg", "png", "gif", "webp"].includes(extension)
+    );
+  };
+
+  // --- Function to get/cache attachment URL ---
+  const getAttachmentUrl = async (
+    userId: string,
+    folderName: string,
+    attachmentName: string
+  ): Promise<string | null> => {
+    const storagePath = `user/${userId}/chats/${folderName}/${attachmentName}`;
+    // Return cached URL if available
+    if (attachmentUrls[storagePath] !== undefined) {
+      return attachmentUrls[storagePath];
+    }
+
+    // Prevent fetching multiple times if already loading
+    if (loadingAttachments.has(storagePath)) {
+      return null; // Or return a placeholder? Indicate loading?
+    }
+
+    setLoadingAttachments((prev) => new Set(prev).add(storagePath));
+    console.log(`Fetching download URL for: ${storagePath}`);
+
+    try {
+      const attachmentRef = ref(storage, storagePath);
+      const url = await getDownloadURL(attachmentRef);
+      setAttachmentUrls((prev) => ({ ...prev, [storagePath]: url }));
+      return url;
+    } catch (error) {
+      // Specify error type if possible, e.g., FirebaseError
+      console.error(`Failed to get download URL for ${storagePath}:`, error);
+      // Cache null to indicate error and prevent refetching
+      setAttachmentUrls((prev) => ({ ...prev, [storagePath]: null }));
+      return null;
+    } finally {
+      setLoadingAttachments((prev) => {
+        const next = new Set(prev);
+        next.delete(storagePath);
+        return next;
+      });
+    }
+  };
 
   // Fetch and Parse function
   const fetchAndParseChat = async (userId: string, folderName: string) => {
@@ -371,6 +279,8 @@ function ChatViewPage({ user }: { user: User }) {
     setParsedMessages([]);
     setParsingError(null);
     setLoadingChat(true);
+    setAttachmentUrls({}); // Clear attachment URLs when chat changes
+    setLoadingAttachments(new Set());
 
     console.log(`Fetching and parsing: ${chatFilePath}`);
     try {
@@ -413,8 +323,88 @@ function ChatViewPage({ user }: { user: User }) {
       setParticipants([]);
       setParsingError(null);
       // myUsername persists between chats
+      setAttachmentUrls({}); // Also clear URLs on unmount/change
+      setLoadingAttachments(new Set());
     };
   }, [chatFolderName, user]); // Rerun on folder change or user change
+
+  // --- Component to render individual attachment ---
+  // This helps manage the async URL fetching within the message map
+  const AttachmentPreview = ({
+    attachmentName,
+  }: {
+    attachmentName: string | null;
+  }) => {
+    const [url, setUrl] = useState<string | null | undefined>(undefined); // undefined = not yet fetched
+
+    useEffect(() => {
+      if (attachmentName && user && chatFolderName) {
+        // Check cache first
+        const storagePath = `user/${user.uid}/chats/${chatFolderName}/${attachmentName}`;
+        const cachedUrl = attachmentUrls[storagePath];
+        if (cachedUrl !== undefined) {
+          setUrl(cachedUrl);
+        } else {
+          // Fetch URL if not cached
+          getAttachmentUrl(user.uid, chatFolderName, attachmentName).then(
+            setUrl
+          );
+        }
+      }
+    }, [attachmentName, user, chatFolderName]); // Re-fetch if attachment/user/folder changes
+
+    if (!attachmentName) return null;
+
+    const isLoading = loadingAttachments.has(
+      `user/${user?.uid}/chats/${chatFolderName}/${attachmentName}`
+    );
+
+    if (url === undefined || isLoading) {
+      return (
+        <p className="attachment-loading">
+          📎 Loading attachment: {attachmentName}...
+        </p>
+      );
+    }
+
+    if (url === null) {
+      // Error fetching URL
+      return (
+        <p className="attachment-error">
+          📎 Error loading attachment: {attachmentName}
+        </p>
+      );
+    }
+
+    if (isImageFile(attachmentName)) {
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`View ${attachmentName}`}
+        >
+          <img
+            src={url}
+            alt={attachmentName}
+            className="attachment-image-preview"
+          />
+        </a>
+      );
+    } else {
+      // Link for non-image files
+      return (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="attachment-link"
+        >
+          📎 Download: {attachmentName}
+        </a>
+      );
+    }
+  };
 
   return (
     <div className="page-container">
@@ -462,11 +452,9 @@ function ChatViewPage({ user }: { user: User }) {
                     <span className="timestamp">{message.timestamp}</span>
                   </div>
                   <div className="message-content">
-                    <p>{message.content}</p>
+                    {message.content && <p>{message.content}</p>}
                     {message.attachment && (
-                      <p className="attachment">
-                        📎 Attached: {message.attachment}
-                      </p>
+                      <AttachmentPreview attachmentName={message.attachment} />
                     )}
                   </div>
                 </div>

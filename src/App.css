@@ -145,6 +145,35 @@
   border-bottom-left-radius: 5px; /* Slightly flatten corner */
 }
 
+/* Attachment Styles */
+.attachment-loading,
+.attachment-error {
+    font-style: italic;
+    color: #888;
+    font-size: 0.9em;
+}
+
+.attachment-link {
+    font-style: italic;
+    font-size: 0.9em;
+    color: #007bff;
+    text-decoration: none;
+    display: block; /* Or inline-block */
+    margin-top: 5px;
+}
+.attachment-link:hover {
+    text-decoration: underline;
+}
+
+.attachment-image-preview {
+    display: block;
+    max-width: 100%; /* Fit within bubble */
+    max-height: 200px; /* Limit height */
+    border-radius: 8px;
+    margin-top: 5px;
+    cursor: pointer;
+}
+
 /* Debug Panel Styles */
 .debug-panel {
     margin-top: 30px;
