@@ -40,3 +40,107 @@
 .read-the-docs {
   color: #888;
 }
+
+.file-section {
+  margin-top: 20px;
+  padding: 15px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+.debug-section {
+  border-color: #eee;
+  background-color: #f9f9f9;
+  opacity: 0.7;
+}
+
+.config-section {
+    margin-bottom: 20px;
+    padding: 10px;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    background-color: #f0f8ff; /* Light blue background */
+}
+
+.config-section label {
+    margin-right: 5px;
+}
+
+.config-section input {
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+/* New Message List Styles */
+
+.message-list {
+  max-height: 60vh; /* Limit height */
+  overflow-y: auto; /* Add scroll */
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background-color: #f5f5f5;
+}
+
+.message-item {
+  margin-bottom: 10px;
+  display: flex; /* Use flexbox for alignment */
+}
+
+.message-bubble {
+  padding: 8px 12px;
+  border-radius: 15px;
+  max-width: 75%; /* Prevent bubble from being too wide */
+  word-wrap: break-word; /* Break long words */
+}
+
+.message-meta {
+  font-size: 0.8em;
+  color: #666;
+  margin-bottom: 4px;
+  display: flex;
+  justify-content: space-between; /* Puts sender/system left, timestamp right */
+}
+
+.message-meta .sender {
+  font-weight: bold;
+  margin-right: 8px;
+}
+
+.message-content p {
+  margin: 0;
+  white-space: pre-wrap; /* Preserve whitespace and newlines */
+}
+
+.attachment {
+  margin-top: 5px !important;
+  font-style: italic;
+  font-size: 0.9em;
+  color: #555;
+  background-color: #eee;
+  padding: 3px 6px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+/* My messages (right aligned) */
+.my-message {
+  justify-content: flex-end; /* Align bubble to the right */
+}
+
+.my-message .message-bubble {
+  background-color: #dcf8c6; /* WhatsApp green */
+  border-bottom-right-radius: 5px; /* Slightly flatten corner */
+}
+
+/* Other messages (left aligned) */
+.other-message {
+  justify-content: flex-start; /* Align bubble to the left */
+}
+
+.other-message .message-bubble {
+  background-color: #ffffff; /* White */
+  border: 1px solid #e9e9eb;
+  border-bottom-left-radius: 5px; /* Slightly flatten corner */
+}
