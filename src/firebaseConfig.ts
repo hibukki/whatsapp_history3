@@ -7,7 +7,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyAMlyvXJQU3wQyDSqoSNbhwfbmzmFPEBQI",
   authDomain: "whatsapp-history3.firebaseapp.com",
   projectId: "whatsapp-history3",
-  storageBucket: "whatsapp-history3.appspot.com",
+  storageBucket: "gs://whatsapp-history3.firebasestorage.app",
   messagingSenderId: "126624187925",
   appId: "1:126624187925:web:6ced0f088627b350ecf01c",
 };
