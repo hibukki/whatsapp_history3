@@ -6,13 +6,14 @@ import {
   signOut,
   User,
 } from "firebase/auth";
-import { ref, uploadBytes, listAll } from "firebase/storage";
+import { ref, uploadBytes, listAll, StorageReference } from "firebase/storage";
 import { auth, storage } from "./firebaseConfig"; // Make sure this path is correct
 import "./App.css";
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
   const [files, setFiles] = useState<string[]>([]);
+  const [extractedFiles, setExtractedFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [uploading, setUploading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +31,10 @@ function App() {
   useEffect(() => {
     if (user) {
       fetchUserFiles(user.uid);
+      fetchExtractedFiles(user.uid);
     } else {
-      setFiles([]); // Clear files when logged out
+      setFiles([]);
+      setExtractedFiles([]);
     }
   }, [user]); // Re-run when user state changes
 
@@ -71,6 +74,8 @@ function App() {
       console.log("File uploaded successfully!");
       // Refresh file list after upload
       fetchUserFiles(user.uid);
+      // Note: Extracted files list will update automatically via the cloud function trigger,
+      // but a manual refresh button is also provided.
     } catch (err) {
       console.error("File upload failed:", err);
       setError(getErrorMessage(err));
@@ -83,14 +88,41 @@ function App() {
     const listRef = ref(storage, `user/${userId}/uploads`);
     try {
       const res = await listAll(listRef);
-      // Potentially fetch download URLs if needed, for now just list names
-      const fileNames = res.items.map((itemRef) => itemRef.name);
-      setFiles(fileNames);
+      // Use fullPath to show the relative path within the bucket
+      const filePaths = res.items.map((itemRef) => itemRef.fullPath);
+      setFiles(filePaths);
       setError(null); // Clear previous errors
     } catch (err) {
       console.error("Failed to list files:", err);
       setError(getErrorMessage(err));
       setFiles([]); // Clear files on error
+    }
+  };
+
+  const fetchExtractedFiles = async (userId: string) => {
+    const listRef = ref(storage, `user/${userId}/extracted`);
+    try {
+      // const res = await listAll(listRef); // Removed unused variable
+
+      // Helper function to recursively list all files
+      const listAllFiles = async (ref: StorageReference): Promise<string[]> => {
+        let files: string[] = [];
+        const result = await listAll(ref);
+        files = files.concat(result.items.map((item) => item.fullPath));
+        for (const prefixRef of result.prefixes) {
+          const subFiles = await listAllFiles(prefixRef);
+          files = files.concat(subFiles);
+        }
+        return files;
+      };
+
+      const allExtractedFiles = await listAllFiles(listRef);
+      setExtractedFiles(allExtractedFiles);
+      setError(null); // Clear previous errors
+    } catch (err) {
+      console.error("Failed to list extracted files:", err);
+      setError(getErrorMessage(err)); // Optionally show error for extracted files specifically
+      setExtractedFiles([]); // Clear extracted files on error
     }
   };
 
@@ -121,25 +153,40 @@ function App() {
               type="file"
               onChange={handleFileUpload}
               disabled={uploading}
+              accept=".zip"
             />
             {uploading && <p>Uploading...</p>}
           </div>
 
           <div className="file-section">
-            <h2>Your Files</h2>
+            <h2>Your Uploaded Files</h2>
             {files.length > 0 ? (
               <ul>
-                {files.map((fileName) => (
-                  <li key={fileName}>{fileName}</li>
-                  // Optional: Add download link if you fetch URLs
-                  // <li key={fileName}><a href={/* downloadURL */} target="_blank" rel="noopener noreferrer">{fileName}</a></li>
+                {files.map((filePath) => (
+                  <li key={filePath}>{filePath}</li>
                 ))}
               </ul>
             ) : (
               <p>No files uploaded yet.</p>
             )}
             <button onClick={() => fetchUserFiles(user.uid)}>
-              Refresh Files
+              Refresh Uploaded Files
+            </button>
+          </div>
+
+          <div className="file-section">
+            <h2>Extracted Files</h2>
+            {extractedFiles.length > 0 ? (
+              <ul>
+                {extractedFiles.map((filePath) => (
+                  <li key={filePath}>{filePath}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No files extracted yet (or refresh needed).</p>
+            )}
+            <button onClick={() => fetchExtractedFiles(user.uid)}>
+              Refresh Extracted Files
             </button>
           </div>
         </div>
