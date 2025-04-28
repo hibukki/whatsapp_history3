@@ -5,8 +5,13 @@ rules_version = '2';
 //    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Match any path under the 'user/' directory
+    match /user/{userId}/{allPaths=**} {
+      // Allow read and write access only if the requesting user's ID
+      // matches the {userId} segment in the path.
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+    // Optionally, add other rules for public files or other paths here.
+    // By default, other paths will be denied.
   }
 }
