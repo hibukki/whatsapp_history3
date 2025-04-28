@@ -25,7 +25,12 @@ service cloud.firestore {
       allow write: if false; 
     }
 
-    // Deny reads/writes to the top-level users collection itself (optional but good practice)
+    // Allow users to read/write their own settings document in the userSettings collection
+    match /userSettings/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Deny direct access to the top-level user document
     match /users/{userId} {
         allow read, write: if false;
     }

@@ -28,6 +28,8 @@ import {
   onSnapshot,
   QuerySnapshot,
   DocumentData,
+  doc,
+  setDoc,
 } from "firebase/firestore"; // Import Firestore functions
 import { auth, storage, db } from "./firebaseConfig"; // Import db
 import "./App.css";
@@ -103,6 +105,9 @@ function ChatListPage({ user }: { user: User }) {
     GlobalSearchResult[]
   >([]);
   const [myUsername, setMyUsername] = useState<string>("");
+
+  // Ref for debouncing Firestore writes
+  const usernameWriteTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const listenerFetchInProgress = useRef(false);
   const prevChatFoldersString = useRef<string | null>(null); // Store previous folders string
@@ -305,6 +310,76 @@ function ChatListPage({ user }: { user: User }) {
     );
   }, [chatFolders, chatListFilter]);
 
+  // --- Username Fetch/Update Logic ---
+  useEffect(() => {
+    if (!user) return;
+
+    const settingsDocRef = doc(db, `userSettings/${user.uid}`);
+
+    // Listener for real-time updates
+    const unsubscribe = onSnapshot(
+      settingsDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const settingsData = docSnap.data();
+          const firestoreUsername = settingsData.selectedUsername || "";
+          // Update local state ONLY if it differs from Firestore
+          // This prevents overwriting user input during typing before debounce fires
+          setMyUsername((currentLocalUsername) => {
+            if (currentLocalUsername !== firestoreUsername) {
+              console.log(
+                "Updating local username from Firestore:",
+                firestoreUsername
+              );
+              return firestoreUsername;
+            }
+            return currentLocalUsername; // No change needed
+          });
+        } else {
+          // Document doesn't exist, maybe set initial empty state if needed
+          console.log("User settings document does not exist.");
+          setMyUsername(""); // Reset if doc deleted
+        }
+      },
+      (error) => {
+        console.error("Error listening to user settings:", error);
+        // Handle listener error appropriately (e.g., show a message)
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => unsubscribe();
+  }, [user]);
+
+  // Handle username input change with debounced Firestore write
+  const handleUsernameChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const newUsername = event.target.value;
+    setMyUsername(newUsername); // Update local state immediately
+
+    // Clear existing debounce timeout
+    if (usernameWriteTimeout.current) {
+      clearTimeout(usernameWriteTimeout.current);
+    }
+
+    // Set new timeout to write to Firestore after delay (e.g., 500ms)
+    usernameWriteTimeout.current = setTimeout(async () => {
+      if (!user) return;
+      console.log(`Debounced: Writing username "${newUsername}" to Firestore`);
+      const settingsDocRef = doc(db, `userSettings/${user.uid}`);
+      try {
+        await setDoc(
+          settingsDocRef,
+          { selectedUsername: newUsername },
+          { merge: true }
+        );
+        console.log("Username updated in Firestore.");
+      } catch (error) {
+        console.error("Failed to update username in Firestore:", error);
+        // Optionally notify user of the error
+      }
+    }, 750); // 750ms debounce delay
+  };
+
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
       return;
@@ -419,7 +494,7 @@ function ChatListPage({ user }: { user: User }) {
           id="usernameInputGlobal"
           type="text"
           value={myUsername}
-          onChange={(e) => setMyUsername(e.target.value)}
+          onChange={handleUsernameChange}
           placeholder="Enter your exact chat name"
           // Maybe provide participants from *all* chats? Too complex?
         />
@@ -639,7 +714,6 @@ function ChatViewPage({ user }: { user: User }) {
     : null;
   const navigate = useNavigate();
   const [parsedMessages, setParsedMessages] = useState<ParsedMessage[]>([]);
-  const [participants, setParticipants] = useState<string[]>([]);
   const [myUsername, setMyUsername] = useState<string>("");
   const [parsingError, setParsingError] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState<boolean>(true);
@@ -659,17 +733,12 @@ function ChatViewPage({ user }: { user: User }) {
         const rawContent = new TextDecoder().decode(fileBytes);
         const parsed = parseChatTxt(rawContent);
         setParsedMessages(parsed);
-        const uniqueSenders = Array.from(
-          new Set(parsed.map((msg) => msg.sender).filter(Boolean))
-        ) as string[];
-        setParticipants(uniqueSenders);
       } catch (err) {
         console.error(`Failed to fetch or parse ${chatFilePath}:`, err);
         setParsingError(
           `Failed to load chat '${folderName}': ${errorMessageToString(err)}`
         );
         setParsedMessages([]);
-        setParticipants([]);
       } finally {
         setLoadingChat(false);
       }
@@ -686,10 +755,36 @@ function ChatViewPage({ user }: { user: User }) {
     }
     return () => {
       setParsedMessages([]);
-      setParticipants([]);
       setParsingError(null);
     };
   }, [chatFolderName, user, fetchAndParseChat]);
+
+  // --- Username Listener ---
+  useEffect(() => {
+    if (!user) return;
+
+    const settingsDocRef = doc(db, `userSettings/${user.uid}`);
+    const unsubscribe = onSnapshot(
+      settingsDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          setMyUsername(docSnap.data().selectedUsername || "");
+        } else {
+          setMyUsername(""); // Reset if settings doc doesn't exist
+        }
+      },
+      (error) => {
+        console.error(
+          "Error listening to user settings in ChatViewPage:",
+          error
+        );
+        setMyUsername(""); // Reset on error maybe?
+      }
+    );
+
+    // Cleanup listener
+    return () => unsubscribe();
+  }, [user]); // Depend only on user
 
   const messagesToDisplay = useMemo(() => {
     if (startLineParam) return parsedMessages;
@@ -730,34 +825,24 @@ function ChatViewPage({ user }: { user: User }) {
     <div className="page-container">
       <button onClick={() => navigate("/")}>&larr; Back to Chat List</button>
       <h2>Viewing Chat: {chatFolderName || "..."}</h2>
-      <div className="config-section chat-controls">
-        <div>
-          <label htmlFor="usernameInput">Your Username: </label>
-          <input
-            id="usernameInput"
-            type="text"
-            value={myUsername}
-            onChange={(e) => setMyUsername(e.target.value)}
-            placeholder="Enter your exact chat name"
-            list="participantsList"
-          />
-          <datalist id="participantsList">
-            {participants.map((p) => (
-              <option key={p} value={p} />
-            ))}
-          </datalist>
-        </div>
-        <div className="search-input">
-          <label htmlFor="searchInput">Search Chat: </label>
-          <input
-            id="searchInput"
-            type="search"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter messages..."
-          />
-        </div>
+
+      {/* Search Input - Keep this part */}
+      <div
+        className="search-input config-section"
+        style={{ marginBottom: "20px" }}
+      >
+        {" "}
+        {/* Added config-section style and margin */}
+        <label htmlFor="searchInput">Search Chat: </label>
+        <input
+          id="searchInput"
+          type="search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Filter messages..."
+        />
       </div>
+
       {loadingChat && <p>Loading chat content...</p>}
       {parsingError && <p style={{ color: "red" }}>{parsingError}</p>}
       {!loadingChat && parsedMessages.length > 0 && searchTerm && (
@@ -774,14 +859,13 @@ function ChatViewPage({ user }: { user: User }) {
       {messagesToDisplay.length > 0 && (
         <div className="message-list" ref={messageListRef}>
           {messagesToDisplay.map((message) => {
-            const currentChatFolderName = chatFolderName || "";
             return (
               <MessageItem
                 key={message.startLine}
                 message={message}
                 myUsername={myUsername}
                 userId={user.uid}
-                chatFolderName={currentChatFolderName}
+                chatFolderName={chatFolderName || ""}
                 onClick={() => handleMessageClick(message)}
                 isClickable={!!searchTerm}
               />
