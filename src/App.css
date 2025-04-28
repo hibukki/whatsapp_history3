@@ -44,7 +44,7 @@
 .file-section {
   margin-top: 20px;
   padding: 15px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--input-border-color);
   border-radius: 5px;
 }
 
@@ -57,9 +57,9 @@
 .config-section {
     margin-bottom: 20px;
     padding: 10px;
-    border: 1px solid #eee;
+    border: 1px solid var(--config-section-border);
     border-radius: 4px;
-    background-color: #f0f8ff; /* Light blue background */
+    background-color: var(--config-section-bg);
 }
 
 .config-section label {
@@ -68,8 +68,10 @@
 
 .config-section input {
     padding: 5px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--input-border-color);
     border-radius: 3px;
+    background-color: var(--page-background);
+    color: var(--text-color);
 }
 
 /* New Message List Styles */
@@ -78,9 +80,9 @@
   max-height: 60vh; /* Limit height */
   overflow-y: auto; /* Add scroll */
   padding: 10px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--message-list-border);
   border-radius: 4px;
-  background-color: #f5f5f5;
+  background-color: var(--message-list-bg);
 }
 
 .message-item {
@@ -97,7 +99,7 @@
 
 .message-meta {
   font-size: 0.8em;
-  color: #666;
+  color: var(--bubble-meta-color);
   margin-bottom: 4px;
   display: flex;
   justify-content: space-between; /* Puts sender/system left, timestamp right */
@@ -117,8 +119,8 @@
   margin-top: 5px !important;
   font-style: italic;
   font-size: 0.9em;
-  color: #555;
-  background-color: #eee;
+  color: var(--bubble-attachment-text);
+  background-color: var(--bubble-attachment-bg);
   padding: 3px 6px;
   border-radius: 3px;
   display: inline-block;
@@ -130,7 +132,8 @@
 }
 
 .my-message .message-bubble {
-  background-color: #dcf8c6; /* WhatsApp green */
+  background-color: var(--bubble-my-bg);
+  color: var(--text-color);
   border-bottom-right-radius: 5px; /* Slightly flatten corner */
 }
 
@@ -140,8 +143,9 @@
 }
 
 .other-message .message-bubble {
-  background-color: #ffffff; /* White */
-  border: 1px solid #e9e9eb;
+  background-color: var(--bubble-other-bg);
+  border: 1px solid var(--bubble-border-color);
+  color: var(--text-color);
   border-bottom-left-radius: 5px; /* Slightly flatten corner */
 }
 
@@ -193,7 +197,7 @@
 /* Debug Panel Styles */
 .debug-panel {
     margin-top: 30px;
-    border: 1px dashed #aaa;
+    border: 1px dashed var(--debug-panel-border);
     border-radius: 5px;
 }
 
@@ -201,16 +205,17 @@
     padding: 10px;
     font-weight: bold;
     cursor: pointer;
-    background-color: #f0f0f0;
-    border-bottom: 1px dashed #aaa; /* Separator when closed */
+    background-color: var(--debug-panel-summary-bg);
+    border-bottom: 1px dashed var(--debug-panel-border); /* Separator when closed */
 }
 
 .debug-panel[open] summary {
-    border-bottom: 1px dashed #aaa;
+    border-bottom: 1px dashed var(--debug-panel-border);
 }
 
 .debug-panel .debug-content {
     padding: 15px;
+    background-color: var(--debug-panel-bg);
 }
 
 .app-header {
@@ -231,4 +236,64 @@ ul {
 
 li {
     margin-bottom: 5px;
+}
+
+:root {
+  /* Existing Vite vars */
+  --text-color-light: #213547;
+  --background-color-light: #ffffff;
+  --button-background-light: #f9f9f9;
+  --link-hover-light: #747bff;
+
+  /* Default (Dark Mode) */
+  --text-color-dark: rgba(255, 255, 255, 0.87);
+  --background-color-dark: #242424;
+  --button-background-dark: #1a1a1a;
+  --link-hover-dark: #535bf2;
+
+  /* Custom App Vars - Dark Mode Defaults */
+  --page-background: var(--background-color-dark);
+  --text-color: var(--text-color-dark);
+  --bubble-border-color: #444; /* Darker border */
+  --bubble-meta-color: #aaa;
+  --bubble-attachment-bg: #333;
+  --bubble-attachment-text: #ccc;
+  --bubble-other-bg: #3a3a3a; /* Dark grey bubble */
+  --bubble-my-bg: #056162; /* Darker WhatsApp green */
+  --debug-panel-border: #666;
+  --debug-panel-summary-bg: #2a2a2a;
+  --debug-panel-bg: #202020;
+  --config-section-bg: #2a3a4a; /* Darker blue */
+  --config-section-border: #445;
+  --input-border-color: #555;
+  --message-list-bg: #1e1e1e;
+  --message-list-border: #333;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Override custom vars for light mode */
+    --page-background: var(--background-color-light);
+    --text-color: var(--text-color-light);
+    --bubble-border-color: #e9e9eb;
+    --bubble-meta-color: #666;
+    --bubble-attachment-bg: #eee;
+    --bubble-attachment-text: #555;
+    --bubble-other-bg: #ffffff;
+    --bubble-my-bg: #dcf8c6;
+    --debug-panel-border: #ccc;
+    --debug-panel-summary-bg: #f0f0f0;
+    --debug-panel-bg: #f9f9f9;
+    --config-section-bg: #f0f8ff;
+    --config-section-border: #eee;
+    --input-border-color: #ccc;
+    --message-list-bg: #f5f5f5;
+    --message-list-border: #e0e0e0;
+  }
+}
+
+body {
+  color: var(--text-color);
+  background-color: var(--page-background);
+  /* Other body styles */
 }
