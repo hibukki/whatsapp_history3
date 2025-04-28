@@ -1,54 +1,101 @@
-# React + TypeScript + Vite
+# Firebase Project Setup (for New Contributors / New Projects)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This guide explains how to set up a new Firebase project to run this application.
 
-Currently, two official plugins are available:
+**1. Prerequisites:**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Node.js & npm:** Install from [nodejs.org](https://nodejs.org/).
+- **Firebase CLI:** Install globally: `npm install -g firebase-tools`
+- **Google Cloud SDK (gcloud):** Install from [cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install).
 
-## Expanding the ESLint configuration
+**2. Create Firebase Project:**
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Go to the [Firebase Console](https://console.firebase.google.com/).
+- Click "Add project" and follow the steps to create a new project.
+- Choose a unique Project ID (e.g., `my-whatsapp-history-app`). You'll need this ID later.
+- Enable Google Analytics if desired (not strictly required for this app's core features).
 
-```js
-export default tseslint.config({
-  extends: [
-    // Remove ...tseslint.configs.recommended and replace with this
-    ...tseslint.configs.recommendedTypeChecked,
-    // Alternatively, use this for stricter rules
-    ...tseslint.configs.strictTypeChecked,
-    // Optionally, add this for stylistic rules
-    ...tseslint.configs.stylisticTypeChecked,
-  ],
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
-```
+**3. Connect Local Project:**
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+- Log in to Firebase: `firebase login`
+- Log in to Google Cloud: `gcloud auth login`
+- In your local project directory (`whatsapp_history3`), connect to your Firebase project (replace `YOUR_PROJECT_ID` with the ID you created):
+  ```bash
+  firebase use --add YOUR_PROJECT_ID
+  gcloud config set project YOUR_PROJECT_ID
+  ```
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+**4. Enable Google Cloud APIs:**
 
-export default tseslint.config({
-  plugins: {
-    // Add the react-x and react-dom plugins
-    'react-x': reactX,
-    'react-dom': reactDom,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended typescript rules
-    ...reactX.configs['recommended-typescript'].rules,
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
+- Go to the [Google Cloud Console API Library](https://console.cloud.google.com/apis/library) for your project.
+- Search for and **Enable** the following APIs:
+  - Cloud Firestore API (`firestore.googleapis.com`) _(Even if not used yet, good practice)_
+  - Cloud Storage (`storage.googleapis.com`)
+  - Cloud Functions API (`cloudfunctions.googleapis.com`)
+  - Cloud Build API (`cloudbuild.googleapis.com`)
+  - Artifact Registry API (`artifactregistry.googleapis.com`)
+  - Cloud Run Admin API (`run.googleapis.com`)
+  - Eventarc API (`eventarc.googleapis.com`)
+  - Pub/Sub API (`pubsub.googleapis.com`)
+
+**5. Set IAM Permissions:**
+
+- Cloud Functions (especially 2nd gen) require specific permissions for their service accounts to interact with other services. Run the following `gcloud` commands in your terminal (replace `YOUR_PROJECT_ID` and ensure your logged-in `gcloud` user has sufficient project permissions, like Project Owner, to grant these roles):
+
+  ```bash
+  # Get your Google Cloud project number
+  PROJECT_NUMBER=$(gcloud projects describe YOUR_PROJECT_ID --format='value(projectNumber)')
+
+  # Grant Cloud Storage agent permission to publish Pub/Sub topics
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+      --member="serviceAccount:service-${PROJECT_NUMBER}@gs-project-accounts.iam.gserviceaccount.com" \
+      --role="roles/pubsub.publisher"
+
+  # Grant Pub/Sub agent permission to create tokens for authenticated push
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+      --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-pubsub.iam.gserviceaccount.com" \
+      --role="roles/iam.serviceAccountTokenCreator"
+
+  # Grant Compute Engine default service account permission to be invoked by Cloud Run/Eventarc
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+      --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+      --role="roles/run.invoker"
+
+  # Grant Compute Engine default service account permission to receive Eventarc events
+  gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+      --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+      --role="roles/eventarc.eventReceiver"
+  ```
+
+**6. Install Dependencies:**
+
+- Install frontend dependencies:
+  ```bash
+  npm install
+  ```
+- Install Cloud Functions dependencies (inside the `functions` directory):
+  ```bash
+  cd functions
+  python3 -m venv venv # Or use your preferred Python version
+  source venv/bin/activate # Or .env\Scripts\activate on Windows
+  pip install -r requirements.txt
+  deactivate
+  cd ..
+  ```
+
+**7. Run Locally (Frontend):**
+
+- Start the Vite development server:
+  ```bash
+  npm run dev
+  ```
+- Open your browser to the URL provided (usually `http://localhost:5173`).
+
+**8. Deploy to Firebase:**
+
+- Deploy all configured Firebase features (Hosting, Storage Rules, Functions):
+  ```bash
+  firebase deploy
+  ```
+
+Now your Firebase project should be fully configured and the application deployed.
