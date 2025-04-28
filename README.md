@@ -1,5 +1,17 @@
 # Firebase Project Setup (for New Contributors / New Projects)
 
+A webapp where you can upload your exported whatsapp conversations and view them in a comfortable way.
+
+## Screenshots
+
+<img width="850" alt="image" src="https://github.com/user-attachments/assets/8d9890bf-158e-4b55-a0a9-b48b1cea9f4b" />
+
+## Security
+
+This project was almost entirely vibe coded, I wouldn't trust the security with private chats.
+
+## Dev
+
 This guide explains how to set up a new Firebase project to run this application.
 
 **1. Prerequisites:**
