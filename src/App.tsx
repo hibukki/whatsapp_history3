@@ -222,6 +222,7 @@ function ChatViewPage({ user }: { user: User }) {
   const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(
     new Set()
   ); // filenames currently loading
+  const [searchTerm, setSearchTerm] = useState<string>(""); // State for search term
 
   // --- Helper to check if filename is an image ---
   const isImageFile = (filename: string | null): boolean => {
@@ -328,8 +329,19 @@ function ChatViewPage({ user }: { user: User }) {
     };
   }, [chatFolderName, user]); // Rerun on folder change or user change
 
-  // --- Component to render individual attachment ---
-  // This helps manage the async URL fetching within the message map
+  // --- Filtered Messages ---
+  // Using useMemo to avoid re-filtering on every render unless messages or term change
+  const filteredMessages = React.useMemo(() => {
+    if (!searchTerm) {
+      return parsedMessages; // No filter applied
+    }
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    return parsedMessages.filter((message) =>
+      message.rawText.toLowerCase().includes(lowerCaseSearchTerm)
+    );
+  }, [parsedMessages, searchTerm]);
+
+  // Component to render individual attachment
   const AttachmentPreview = ({
     attachmentName,
   }: {
@@ -411,34 +423,54 @@ function ChatViewPage({ user }: { user: User }) {
       <button onClick={() => navigate("/")}>&larr; Back to Chat List</button>
       <h2>Viewing Chat: {chatFolderName || "..."}</h2>
 
-      {/* Username Input */}
-      <div className="config-section">
-        <label htmlFor="usernameInput">Your Username: </label>
-        <input
-          id="usernameInput"
-          type="text"
-          value={myUsername}
-          onChange={(e) => setMyUsername(e.target.value)}
-          placeholder="Enter your exact chat name"
-          list="participantsList"
-        />
-        <datalist id="participantsList">
-          {participants.map((p) => (
-            <option key={p} value={p} />
-          ))}
-        </datalist>
+      {/* Username Input & Search */}
+      <div className="config-section chat-controls">
+        <div>
+          <label htmlFor="usernameInput">Your Username: </label>
+          <input
+            id="usernameInput"
+            type="text"
+            value={myUsername}
+            onChange={(e) => setMyUsername(e.target.value)}
+            placeholder="Enter your exact chat name"
+            list="participantsList"
+          />
+          <datalist id="participantsList">
+            {participants.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+        </div>
+        <div className="search-input">
+          <label htmlFor="searchInput">Search Chat: </label>
+          <input
+            id="searchInput"
+            type="search" // Use type="search" for potential browser features
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Filter messages..."
+          />
+        </div>
       </div>
 
       {loadingChat && <p>Loading chat content...</p>}
       {parsingError && <p style={{ color: "red" }}>{parsingError}</p>}
+      {!loadingChat && parsedMessages.length > 0 && searchTerm && (
+        <p>
+          {filteredMessages.length} of {parsedMessages.length} messages matching
+          "{searchTerm}".
+        </p>
+      )}
       {!loadingChat && parsedMessages.length === 0 && !parsingError && (
         <p>
           No messages found in this chat file, or the file is empty/invalid.
         </p>
       )}
-      {parsedMessages.length > 0 && (
+      {/* Render filtered messages */}
+      {filteredMessages.length > 0 && (
         <div className="message-list">
-          {parsedMessages.map((message) => {
+          {filteredMessages.map((message) => {
+            // Use filteredMessages
             const isMyMessage =
               message.sender === myUsername && myUsername !== "";
             const messageClass = isMyMessage
@@ -465,6 +497,11 @@ function ChatViewPage({ user }: { user: User }) {
           })}
         </div>
       )}
+      {/* Show message if filter hides all messages */}
+      {!loadingChat &&
+        parsedMessages.length > 0 &&
+        filteredMessages.length === 0 &&
+        searchTerm && <p>No messages match your search term "{searchTerm}".</p>}
     </div>
   );
 }

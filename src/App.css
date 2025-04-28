@@ -297,3 +297,16 @@ body {
   background-color: var(--page-background);
   /* Other body styles */
 }
+
+/* Styles for chat controls section */
+.chat-controls {
+    display: flex;
+    justify-content: space-between; /* Space out username and search */
+    align-items: center;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    gap: 15px; /* Add some space between items */
+}
+
+.search-input {
+    /* Styles for search input container if needed */
+}
