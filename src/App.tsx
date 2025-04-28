@@ -203,8 +203,9 @@ function ChatListPage({ user }: { user: User }) {
 
 // Component for Viewing a Single Chat (/chats/:chatFolderName)
 function ChatViewPage({ user }: { user: User }) {
-  const { chatFolderName: encodedChatFolderName } = useParams<{
+  const { chatFolderName: encodedChatFolderName, startLineParam } = useParams<{
     chatFolderName: string;
+    startLineParam?: string;
   }>();
   const chatFolderName = encodedChatFolderName
     ? decodeURIComponent(encodedChatFolderName)
@@ -222,7 +223,10 @@ function ChatViewPage({ user }: { user: User }) {
   const [loadingAttachments, setLoadingAttachments] = useState<Set<string>>(
     new Set()
   ); // filenames currently loading
-  const [searchTerm, setSearchTerm] = useState<string>(""); // State for search term
+  const [searchTerm, setSearchTerm] = useState<string>("");
+
+  // Ref for the message list container to help with scrolling checks
+  const messageListRef = React.useRef<HTMLDivElement>(null);
 
   // --- Helper to check if filename is an image ---
   const isImageFile = (filename: string | null): boolean => {
@@ -330,8 +334,12 @@ function ChatViewPage({ user }: { user: User }) {
   }, [chatFolderName, user]); // Rerun on folder change or user change
 
   // --- Filtered Messages ---
-  // Using useMemo to avoid re-filtering on every render unless messages or term change
-  const filteredMessages = React.useMemo(() => {
+  const messagesToDisplay = React.useMemo(() => {
+    // If navigating to a specific message, always show unfiltered list initially
+    if (startLineParam) {
+      return parsedMessages;
+    }
+    // Otherwise, filter based on search term
     if (!searchTerm) {
       return parsedMessages; // No filter applied
     }
@@ -339,7 +347,36 @@ function ChatViewPage({ user }: { user: User }) {
     return parsedMessages.filter((message) =>
       message.rawText.toLowerCase().includes(lowerCaseSearchTerm)
     );
-  }, [parsedMessages, searchTerm]);
+  }, [parsedMessages, searchTerm, startLineParam]); // Depend on startLineParam too
+
+  // --- Scrolling Effect ---
+  useEffect(() => {
+    // Only scroll if startLineParam is present and we have messages
+    if (startLineParam && messagesToDisplay.length > 0) {
+      const targetLine = parseInt(startLineParam, 10);
+      if (!isNaN(targetLine)) {
+        // Use a small delay to ensure the element is rendered after state updates
+        const timer = setTimeout(() => {
+          const element = document.getElementById(`message-${targetLine}`);
+          if (element) {
+            console.log(`Scrolling to message-${targetLine}`);
+            element.scrollIntoView({
+              behavior: "smooth",
+              block: "center", // Scroll to center of view
+            });
+            // Optional: Add a visual highlight
+            element.classList.add("highlighted-message");
+            setTimeout(
+              () => element.classList.remove("highlighted-message"),
+              2000
+            ); // Remove highlight after 2s
+          }
+        }, 100); // 100ms delay, adjust if needed
+
+        return () => clearTimeout(timer); // Cleanup timer on unmount/re-run
+      }
+    }
+  }, [startLineParam, messagesToDisplay]); // Rerun when param changes or messages are loaded
 
   // Component to render individual attachment
   const AttachmentPreview = ({
@@ -457,8 +494,8 @@ function ChatViewPage({ user }: { user: User }) {
       {parsingError && <p style={{ color: "red" }}>{parsingError}</p>}
       {!loadingChat && parsedMessages.length > 0 && searchTerm && (
         <p>
-          {filteredMessages.length} of {parsedMessages.length} messages matching
-          "{searchTerm}".
+          {messagesToDisplay.length} of {parsedMessages.length} messages
+          matching "{searchTerm}".
         </p>
       )}
       {!loadingChat && parsedMessages.length === 0 && !parsingError && (
@@ -466,11 +503,10 @@ function ChatViewPage({ user }: { user: User }) {
           No messages found in this chat file, or the file is empty/invalid.
         </p>
       )}
-      {/* Render filtered messages */}
-      {filteredMessages.length > 0 && (
-        <div className="message-list">
-          {filteredMessages.map((message) => {
-            // Use filteredMessages
+      {/* Render messages using messagesToDisplay */}
+      {messagesToDisplay.length > 0 && (
+        <div className="message-list" ref={messageListRef}>
+          {messagesToDisplay.map((message) => {
             const isMyMessage =
               message.sender === myUsername && myUsername !== "";
             const messageClass = isMyMessage
@@ -478,13 +514,29 @@ function ChatViewPage({ user }: { user: User }) {
               : "message-item other-message";
             const directionClass = `direction-${message.direction}`;
 
+            // --- Click Handler for Navigation ---
+            const handleMessageClick = () => {
+              // Only navigate if a search term is active (i.e., list is filtered)
+              if (searchTerm && chatFolderName) {
+                console.log(`Navigating to message ${message.startLine}`);
+                navigate(
+                  `/chats/${encodeURIComponent(chatFolderName)}/messages/${
+                    message.startLine
+                  }`
+                );
+              }
+            };
+
             return (
-              <div key={message.startLine} className={messageClass}>
+              <div
+                key={message.startLine}
+                id={`message-${message.startLine}`} // Add ID for scrolling
+                className={messageClass}
+                onClick={handleMessageClick} // Add click handler
+                title={searchTerm ? "Go to this message in full chat" : ""} // Add tooltip
+                style={{ cursor: searchTerm ? "pointer" : "default" }} // Indicate clickable
+              >
                 <div className="message-bubble">
-                  <div className="message-meta">
-                    <span className="sender">{message.sender || "System"}</span>
-                    <span className="timestamp">{message.timestamp}</span>
-                  </div>
                   <div className={`message-content ${directionClass}`}>
                     {message.content && <p>{message.content}</p>}
                     {message.attachment && (
@@ -500,7 +552,7 @@ function ChatViewPage({ user }: { user: User }) {
       {/* Show message if filter hides all messages */}
       {!loadingChat &&
         parsedMessages.length > 0 &&
-        filteredMessages.length === 0 &&
+        messagesToDisplay.length === 0 &&
         searchTerm && <p>No messages match your search term "{searchTerm}".</p>}
     </div>
   );
@@ -576,9 +628,11 @@ function App() {
               path="/chats/:chatFolderName"
               element={<ChatViewPage user={user} />}
             />
-            {/* Add other routes here if needed */}
-            <Route path="*" element={<div>Page Not Found</div>} />{" "}
-            {/* Catch-all */}
+            <Route
+              path="/chats/:chatFolderName/messages/:startLineParam"
+              element={<ChatViewPage user={user} />}
+            />
+            <Route path="*" element={<div>Page Not Found</div>} />
           </Routes>
         ) : (
           <div>

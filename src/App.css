@@ -149,6 +149,18 @@
   border-bottom-left-radius: 5px; /* Slightly flatten corner */
 }
 
+/* Highlight for scrolled-to message */
+.highlighted-message .message-bubble {
+    animation: highlight-fade 2s ease-out;
+}
+
+@keyframes highlight-fade {
+    0% { background-color: yellow; } 
+    /* Start yellow */
+    /* Mid-point color can be adjusted if needed */
+    100% { background-color: inherit; } /* Fade to original color */
+}
+
 /* Text Direction Styles */
 .direction-ltr {
     /* Default behavior, but explicit */
