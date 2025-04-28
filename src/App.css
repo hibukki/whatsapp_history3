@@ -280,6 +280,7 @@ li {
   --input-border-color: #555;
   --message-list-bg: #1e1e1e;
   --message-list-border: #333;
+  --chat-list-item-bg: #282828; /* Slightly lighter than message list bg */
 }
 
 @media (prefers-color-scheme: light) {
@@ -301,6 +302,7 @@ li {
     --input-border-color: #ccc;
     --message-list-bg: #f5f5f5;
     --message-list-border: #e0e0e0;
+    --chat-list-item-bg: #ffffff; /* White in light mode */
   }
 }
 
@@ -322,3 +324,83 @@ body {
 .search-input {
     /* Styles for search input container if needed */
 }
+
+/* Global Search & Chat List Filter */
+.global-search-section input[type="search"],
+.chat-list-filter input[type="search"] {
+    /* width: 95%; Removed to match list width */
+    padding: 8px 10px;
+    margin-bottom: 15px; 
+    border: 1px solid var(--input-border-color);
+    border-radius: 5px;
+    background-color: var(--page-background);
+    color: var(--text-color);
+    font-size: 1em;
+    box-sizing: border-box; /* Include padding/border in width calculation */
+    width: 100%; /* Make it take full container width */
+}
+
+.chat-list-filter {
+    margin-bottom: 10px; /* Space between filter and list */
+    /* If the input width seems off due to list padding/border, */
+    /* we might need to adjust padding here or on the input */
+}
+
+/* Styled Chat List */
+.chat-list {
+    padding: 0;
+    margin: 0;
+    border: 1px solid var(--message-list-border); /* Add border to list container */
+    border-radius: 5px;
+    overflow: hidden; /* Ensure borders contain children */
+}
+
+.chat-list-item a {
+    display: block; 
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--message-list-border); 
+    text-decoration: none;
+    color: var(--text-color);
+    background-color: var(--chat-list-item-bg); /* Give item distinct bg */
+    transition: background-color 0.15s ease-in-out;
+}
+
+.chat-list-item:last-child a {
+    border-bottom: none; 
+}
+
+.chat-list-item a:hover {
+    /* Slightly darken/lighten the item bg on hover */
+    /* Using filter might be an option, or define hover vars */
+    background-color: var(--message-list-bg); /* Reuse message list bg for hover */
+}
+
+.chat-list-item .chat-name {
+    font-weight: 500;
+    font-size: 1.1em;
+    margin-bottom: 3px; /* Space between name and potential preview */
+    display: block;
+}
+
+/* Styles for potential future preview/timestamp */
+.chat-list-item .chat-last-message {
+    font-size: 0.9em;
+    color: var(--bubble-meta-color);
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.chat-list-item .chat-timestamp {
+    font-size: 0.8em;
+    color: var(--bubble-meta-color);
+    float: right; /* Position timestamp to the right */
+}
+
+/* Page Container */
+.page-container {
+/* ... */
+}
+
+/* Other component styles... */

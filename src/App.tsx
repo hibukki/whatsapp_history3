@@ -58,13 +58,15 @@ function ChatListPage({ user }: { user: User }) {
   const [listError, setListError] = useState<string | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  // Chat List Filter State
+  const [chatListFilter, setChatListFilter] = useState<string>("");
 
   // Debug states
   const [files, setFiles] = useState<string[]>([]);
   const [extractedFiles, setExtractedFiles] = useState<string[]>([]);
   const [chatFiles, setChatFiles] = useState<string[]>([]);
-
-  const navigate = useNavigate(); // For navigating from search results
 
   // Global Search State
   const [globalSearchTerm, setGlobalSearchTerm] = useState<string>("");
@@ -205,6 +207,17 @@ function ChatListPage({ user }: { user: User }) {
     }
   }, [globalSearchTerm, allParsedMessages]);
 
+  // Filtered Chat Folders List
+  const filteredChatFolders = useMemo(() => {
+    if (!chatListFilter) {
+      return chatFolders;
+    }
+    const lowerCaseFilter = chatListFilter.toLowerCase();
+    return chatFolders.filter((folderName) =>
+      folderName.toLowerCase().includes(lowerCaseFilter)
+    );
+  }, [chatFolders, chatListFilter]);
+
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
       return;
@@ -306,25 +319,48 @@ function ChatListPage({ user }: { user: User }) {
         </div>
       )}
 
-      <h2>Available Chats</h2>
-      {loadingFolders && <p>Loading chats...</p>}
-      {listError && (
-        <p style={{ color: "red" }}>Error loading chats: {listError}</p>
-      )}
-      {!loadingFolders && chatFolders.length === 0 && (
-        <p>No chats found. Upload an exported chat zip file below.</p>
-      )}
-      {chatFolders.length > 0 && (
-        <ul>
-          {chatFolders.map((folderName) => (
-            <li key={folderName}>
-              <Link to={`/chats/${encodeURIComponent(folderName)}`}>
-                {folderName}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* Chat List Section */}
+      <div className="chat-list-section file-section">
+        <h2>Available Chats</h2>
+        {/* Chat List Filter Input */}
+        <div className="chat-list-filter">
+          <input
+            type="search"
+            value={chatListFilter}
+            onChange={(e) => setChatListFilter(e.target.value)}
+            placeholder="Filter chats by name..."
+          />
+        </div>
+
+        {loadingFolders && <p>Loading chats...</p>}
+        {listError && (
+          <p style={{ color: "red" }}>Error loading chats: {listError}</p>
+        )}
+        {!loadingFolders && chatFolders.length === 0 && (
+          <p>No chats found. Upload an exported chat zip file below.</p>
+        )}
+        {!loadingFolders &&
+          chatFolders.length > 0 &&
+          filteredChatFolders.length === 0 && (
+            <p>No chats match filter "{chatListFilter}".</p>
+          )}
+
+        {/* Styled Chat List */}
+        {filteredChatFolders.length > 0 && (
+          <ul className="chat-list">
+            {filteredChatFolders.map((folderName) => (
+              <li key={folderName} className="chat-list-item">
+                <Link to={`/chats/${encodeURIComponent(folderName)}`}>
+                  <span className="chat-name">{folderName}</span>
+                  {/* Placeholder for last message/time? */}
+                  {/* <span className="chat-last-message">Last message preview...</span> */}
+                  {/* <span className="chat-timestamp">Time</span> */}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* Upload Section */}
       <div className="file-section">
