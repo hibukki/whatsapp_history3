@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+import { getFirestore } from "firebase/firestore";
 
 // TODO: Replace with your actual Firebase project configuration
 const firebaseConfig = {
@@ -18,5 +19,6 @@ const app = initializeApp(firebaseConfig);
 // Get Firebase services
 const auth = getAuth(app);
 const storage = getStorage(app);
+const db = getFirestore(app, "whatsapp-history3-firestore");
 
-export { auth, storage };
+export { app, auth, storage, db };

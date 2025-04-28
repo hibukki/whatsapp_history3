@@ -5,6 +5,8 @@ import { AttachmentPreview } from "./AttachmentPreview"; // Assuming AttachmentP
 interface MessageItemProps {
   message: ParsedMessage;
   myUsername: string;
+  userId: string; // Added userId
+  chatFolderName: string; // Added chatFolderName
   onClick?: () => void; // Make onClick optional
   isClickable?: boolean; // Explicit prop to control cursor/title
 }
@@ -12,6 +14,8 @@ interface MessageItemProps {
 export const MessageItem: React.FC<MessageItemProps> = ({
   message,
   myUsername,
+  userId, // Destructure added prop
+  chatFolderName, // Destructure added prop
   onClick,
   isClickable,
 }) => {
@@ -39,8 +43,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           {message.attachment && (
             <AttachmentPreview
               attachmentName={message.attachment}
-              // Pass necessary props for URL fetching if AttachmentPreview needs them directly
-              // Alternatively, AttachmentPreview might use context or global state
+              userId={userId} // Pass userId down
+              chatFolderName={chatFolderName} // Pass chatFolderName down
             />
           )}
         </div>

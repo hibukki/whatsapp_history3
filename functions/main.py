@@ -7,7 +7,9 @@
 import firebase_admin
 # --- Added firebase_functions and storage_fn ---
 from firebase_functions import storage_fn #, options
-from firebase_admin import storage
+from firebase_admin import storage, firestore
+# --- Added google.cloud.firestore Client import --- 
+from google.cloud.firestore import Client as FirestoreClient 
 import os
 import zipfile
 import tempfile
@@ -19,8 +21,7 @@ import logging
 try:
     firebase_admin.initialize_app()
 except ValueError:
-    # App already initialized, ignore.
-    pass
+    pass # App already initialized
 
 # --- Replaced decorator with Firebase Storage trigger ---
 # @functions_framework.cloud_event
@@ -110,7 +111,7 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
                 destination_blob = storage_client.blob(destination_blob_name)
                 try:
                     destination_blob.upload_from_filename(local_file_path)
-                    logging.info(f"Uploaded {local_file_path} to {destination_blob_name}")
+                    # logging.info(f"Uploaded {local_file_path} to {destination_blob_name}") # Too verbose
                     upload_count += 1
                 except Exception as e:
                     logging.error(f"Failed to upload {local_file_path} to {destination_blob_name}: {e}")
@@ -122,17 +123,16 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
         chat_file_blob = storage_client.blob(extracted_chat_file_path)
 
         if chat_file_blob.exists():
-            logging.info(f"Found {extracted_chat_file_path}. Copying extracted folder to chats/.")
+            logging.info(f"Found _chat.txt. Copying contents to chats/{zip_name_base}/")
             copy_count = 0
             source_prefix = f"user/{user_id}/extracted/{zip_name_base}/"
             destination_prefix = f"user/{user_id}/chats/{zip_name_base}/"
 
-            try:
-                # List all blobs in the extracted subfolder
-                blobs_to_copy = list(storage_client.list_blobs(prefix=source_prefix))
-                if not blobs_to_copy:
-                    logging.warning(f"_chat.txt exists but no blobs found under prefix {source_prefix} to copy.")
-
+            # Copy blobs - Allow exceptions to propagate
+            blobs_to_copy = list(storage_client.list_blobs(prefix=source_prefix))
+            if not blobs_to_copy:
+                logging.warning(f"_chat.txt exists but no blobs found under prefix {source_prefix}.")
+            else:
                 for blob in blobs_to_copy:
                     # Calculate destination path
                     relative_blob_path = blob.name[len(source_prefix):] # Get path relative to source prefix
@@ -146,21 +146,17 @@ def extract_zip(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]):
                          # Handle large files that require multiple rewrite calls (though unlikely for chat files)
                         token, bytes_rewritten, total_bytes = destination_blob.rewrite(blob, token=token)
 
-                    logging.info(f"Copied {blob.name} to {destination_blob_path}")
+                    # logging.info(f"Copied {blob.name} to {destination_blob_path}") # Too verbose
                     copy_count += 1
 
                 logging.info(f"Finished copying {copy_count} files to {destination_prefix}")
-                # Optionally: Delete the extracted folder after successful copy?
-                # logging.info(f"Deleting intermediate extracted folder: {source_prefix}")
-                # for blob in blobs_to_copy:
-                #     try:
-                #         blob.delete()
-                #         logging.info(f"Deleted {blob.name}")
-                #     except Exception as e:
-                #         logging.error(f"Failed to delete blob {blob.name}: {e}")
 
-            except Exception as e:
-                logging.error(f"Error during copy from {source_prefix} to {destination_prefix}: {e}", exc_info=True)
+                # --- Write to Firestore cache AFTER successful copy ---
+                logging.info(f"Updating Firestore cache for user {user_id}, folder {zip_name_base}")
+                db = FirestoreClient(database='whatsapp-history3-firestore')
+                doc_ref = db.collection('users').document(user_id).collection('chatFoldersCache').document(zip_name_base)
+                doc_ref.set({'updated_at': firestore.SERVER_TIMESTAMP})
+                logging.info(f"Firestore cache updated successfully for {zip_name_base}.")
         else:
             logging.info(f"Did not find {extracted_chat_file_path}. No copy to chats/ performed.")
 

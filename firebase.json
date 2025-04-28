@@ -18,5 +18,10 @@
         "*.local"
       ]
     }
-  ]
+  ],
+  "firestore": {
+    "database": "whatsapp-history3-firestore",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
 }
