@@ -105,6 +105,7 @@ function ChatListPage({ user }: { user: User }) {
     GlobalSearchResult[]
   >([]);
   const [myUsername, setMyUsername] = useState<string>("");
+  const [isUserApproved, setIsUserApproved] = useState<boolean>(false);
 
   // Ref for debouncing Firestore writes
   const usernameWriteTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -170,16 +171,14 @@ function ChatListPage({ user }: { user: User }) {
   // --- Firestore Listener for REFRESH Trigger ---
   useEffect(() => {
     if (!user) return;
-
     const cacheCollectionRef = collection(
       db,
       `users/${user.uid}/chatFoldersCache`
     );
     const q = query(cacheCollectionRef);
-
     const unsubscribe = onSnapshot(
       q,
-      // Use underscore prefix for unused parameter (tsc build error)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       (_querySnapshot: QuerySnapshot<DocumentData>) => {
         if (listenerFetchInProgress.current) {
           return;
@@ -191,12 +190,11 @@ function ChatListPage({ user }: { user: User }) {
         console.error("Firestore listener error (refresh trigger):", error);
       }
     );
-
     return () => {
       unsubscribe();
       listenerFetchInProgress.current = false;
     };
-  }, [user, fetchFoldersFromStorage]);
+  }, [user]);
 
   // --- Function to fetch DEBUG file lists (Moved to component scope) ---
   const fetchDebugLists = async (userId: string) => {
@@ -318,44 +316,40 @@ function ChatListPage({ user }: { user: User }) {
     );
   }, [chatFolders, chatListFilter]);
 
-  // --- Username Fetch/Update Logic ---
+  // --- Username & Approval Status Fetch/Update Logic ---
   useEffect(() => {
     if (!user) return;
-
     const settingsDocRef = doc(db, `userSettings/${user.uid}`);
-
-    // Listener for real-time updates
     const unsubscribe = onSnapshot(
       settingsDocRef,
       (docSnap) => {
         if (docSnap.exists()) {
           const settingsData = docSnap.data();
           const firestoreUsername = settingsData.selectedUsername || "";
-          // Update local state ONLY if it differs from Firestore
-          // This prevents overwriting user input during typing before debounce fires
+          const firestoreApproval = settingsData.isApproved === true; // Check for explicit true
+
+          // Update local username state if different
           setMyUsername((currentLocalUsername) => {
             if (currentLocalUsername !== firestoreUsername) {
-              console.log(
-                "Updating local username from Firestore:",
-                firestoreUsername
-              );
               return firestoreUsername;
             }
-            return currentLocalUsername; // No change needed
+            return currentLocalUsername;
           });
+          // Update approval state
+          setIsUserApproved(firestoreApproval);
         } else {
-          // Document doesn't exist, maybe set initial empty state if needed
-          console.log("User settings document does not exist.");
-          setMyUsername(""); // Reset if doc deleted
+          // Reset if settings doc doesn't exist
+          setMyUsername("");
+          setIsUserApproved(false);
         }
       },
       (error) => {
         console.error("Error listening to user settings:", error);
-        // Handle listener error appropriately (e.g., show a message)
+        // Reset on error
+        setMyUsername("");
+        setIsUserApproved(false);
       }
     );
-
-    // Cleanup listener on unmount
     return () => unsubscribe();
   }, [user]);
 
@@ -631,10 +625,21 @@ function ChatListPage({ user }: { user: User }) {
         <input
           type="file"
           onChange={handleFileUpload}
-          disabled={uploading}
+          disabled={!isUserApproved || uploading}
           accept=".zip"
           multiple
+          title={
+            !isUserApproved
+              ? "Uploads disabled: User not approved"
+              : "Select one or more .zip files"
+          }
         />
+        {!isUserApproved && (
+          <p style={{ color: "orange", marginTop: "10px" }}>
+            Your account is not yet approved for uploads. Please contact the
+            administrator.
+          </p>
+        )}
         {uploading && (
           <div>
             <p>Uploading {totalFilesToUpload} file(s)...</p>
@@ -650,9 +655,14 @@ function ChatListPage({ user }: { user: User }) {
             </p>
           </div>
         )}
-        {uploadError && (
-          <p style={{ color: "red" }}>Upload failed: {uploadError}</p>
-        )}
+        {uploadError &&
+          (uploadError.includes("storage/unauthorized") ? (
+            <p style={{ color: "red" }}>
+              Upload failed: Permission denied. (Check approval status)
+            </p>
+          ) : (
+            <p style={{ color: "red" }}>Upload failed: {uploadError}</p>
+          ))}
         {!uploading &&
           filesUploaded > 0 &&
           totalFilesToUpload > 0 &&

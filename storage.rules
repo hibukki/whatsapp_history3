@@ -5,12 +5,30 @@ rules_version = '2';
 //    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    // Match any path under the 'user/' directory
+    // User-specific files
     match /user/{userId}/{allPaths=**} {
-      // Allow read and write access only if the requesting user's ID
-      // matches the {userId} segment in the path.
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow users to read their own files
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Deny direct writes to non-upload paths from client
+      // Allow write: if request.auth != null && request.auth.uid == userId; // Removed general write
     }
+
+    // Specific rule for uploads path
+    match /user/{userId}/uploads/{fileName} {
+       // Allow writes (uploads) only if user is authenticated, matches path,
+       // AND their settings doc in Firestore has isApproved == true.
+       allow write: if request.auth != null 
+                      && request.auth.uid == userId 
+                      && firestore.get(/databases/whatsapp-history3-firestore/documents/userSettings/$(userId)).data.isApproved == true;
+       
+       // Inherit read rule from the wildcard match above
+       allow read: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Consider rules for function access if needed (e.g., allow writes from functions to extracted/chats)
+    // Function access uses service accounts, not request.auth
+
     // Optionally, add other rules for public files or other paths here.
     // By default, other paths will be denied.
   }
