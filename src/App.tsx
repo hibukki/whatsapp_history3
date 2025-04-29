@@ -636,8 +636,9 @@ function ChatListPage({ user }: { user: User }) {
         />
         {!isUserApproved && (
           <p style={{ color: "orange", marginTop: "10px" }}>
-            Your account is not yet approved for uploads. Please contact the
-            administrator.
+            Your user isn't approved for uploads: I don't want to have people's
+            whatsapp history in a server I run while I don't feel comfortable
+            about the security.
           </p>
         )}
         {uploading && (
