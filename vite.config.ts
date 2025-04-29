@@ -1,12 +1,21 @@
-import { defineConfig } from "vite";
+import { defineConfig as defineViteConfig } from "vite";
+import { defineConfig as defineVitestConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
-import { InlineConfig } from "vitest";
+import { mergeConfig } from "vite";
 
-// https://vitejs.dev/config/
-export default defineConfig({
+// Vite config
+const viteConfig = defineViteConfig({
   plugins: [react()],
+});
+
+// Vitest config
+const vitestConfig = defineVitestConfig({
   test: {
     globals: true, // Make expect, it, describe etc. available globally
     environment: "jsdom", // Or 'happy-dom' for faster tests if needed
-  } as InlineConfig, // Cast to Vitest config type
+  },
 });
+
+// https://vitejs.dev/config/
+// Merge configs
+export default mergeConfig(viteConfig, vitestConfig);

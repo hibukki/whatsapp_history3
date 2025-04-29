@@ -179,8 +179,8 @@ function ChatListPage({ user }: { user: User }) {
 
     const unsubscribe = onSnapshot(
       q,
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      (querySnapshot: QuerySnapshot<DocumentData>) => {
+      // Use underscore prefix for unused parameter (tsc build error)
+      (_querySnapshot: QuerySnapshot<DocumentData>) => {
         if (listenerFetchInProgress.current) {
           return;
         }
