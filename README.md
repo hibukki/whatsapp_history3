@@ -111,3 +111,9 @@ This guide explains how to set up a new Firebase project to run this application
   ```
 
 Now your Firebase project should be fully configured and the application deployed.
+
+**9. Set CORS**
+
+```bash
+gsutil cors set cors.json gs://whatsapp-history3.firebasestorage.app
+```
