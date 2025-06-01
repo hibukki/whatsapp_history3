@@ -16,14 +16,28 @@ service firebase.storage {
 
     // Specific rule for uploads path
     match /user/{userId}/uploads/{fileName} {
+       // Allow read if user is authenticated and matches path
+       allow read: if request.auth != null && request.auth.uid == userId;
+
        // Allow writes (uploads) only if user is authenticated, matches path,
-       // AND their settings doc in Firestore has isApproved == true.
+       // AND their settings doc exists and isApproved is explicitly true.
        allow write: if request.auth != null 
                       && request.auth.uid == userId 
-                      && firestore.get(/databases/whatsapp-history3-firestore/documents/userSettings/$(userId)).data.isApproved == true;
-       
-       // Inherit read rule from the wildcard match above
-       allow read: if request.auth != null && request.auth.uid == userId;
+                      && firestore.get(/databases/whatsapp-history3-firestore/documents/userSettings/$(userId)).exists
+                      && bool(firestore.get(/databases/whatsapp-history3-firestore/documents/userSettings/$(userId)).data.isApproved) == true;
+    }
+
+    // Rule for OTHER user-specific files (e.g., extracted, chats)
+    // This uses a different wildcard name and checks the path
+    match /user/{userId}/{otherPaths=**} {
+      // Allow read ONLY if the path doesn't start with 'uploads/' 
+      // AND the user is authenticated and matches path.
+      allow read: if request.auth != null 
+                    && request.auth.uid == userId 
+                    && !otherPaths.matches('uploads/.*');
+                    
+      // Deny client writes explicitly to other paths
+      allow write: if false;
     }
 
     // Consider rules for function access if needed (e.g., allow writes from functions to extracted/chats)
