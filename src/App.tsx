@@ -319,6 +319,7 @@ function ChatListPage({ user }: { user: User }) {
   // --- Username & Approval Status Fetch/Update Logic ---
   useEffect(() => {
     if (!user) return;
+    console.log("Looking for settings for uid=", user.uid);
     const settingsDocRef = doc(db, `userSettings/${user.uid}`);
     const unsubscribe = onSnapshot(
       settingsDocRef,
@@ -335,10 +336,12 @@ function ChatListPage({ user }: { user: User }) {
             }
             return currentLocalUsername;
           });
+          console.log("Got user settings", settingsData);
           // Update approval state
           setIsUserApproved(firestoreApproval);
         } else {
           // Reset if settings doc doesn't exist
+          console.log("User settings not found");
           setMyUsername("");
           setIsUserApproved(false);
         }
@@ -917,6 +920,7 @@ function App() {
         setUser(currentUser);
         setLoadingAuth(false);
         setAuthError(null);
+        console.log("Auth state changed:", currentUser);
       },
       (error) => {
         console.error("Auth state error:", error);
