@@ -15,6 +15,9 @@ import {
 } from "firebase/auth";
 import { LocalStorageManager } from './localStorageUtils';
 import { AppUser, wrapFirebaseUser, isLocalUser, isFirebaseUser } from './userTypes';
+import { useUsername } from './hooks/useUsername';
+import { useUserApproval } from './hooks/useUserApproval';
+import { useUsernameInput } from './hooks/useUsernameInput';
 import {
   ref,
   listAll,
@@ -29,14 +32,13 @@ import {
   onSnapshot,
   QuerySnapshot,
   DocumentData,
-  doc,
-  setDoc,
 } from "firebase/firestore"; // Import Firestore functions
 import { auth, storage, db } from "./firebaseConfig"; // Import db
 import "./App.css";
 import { parseChatTxt, ParsedMessage } from "./chatParser"; // Import parser
 import { searchMessages } from "./chatSearchUtils"; // Import search utility
 import { MessageItem } from "./components/MessageItem"; // Import MessageItem
+import { getErrorMessage } from "./utils/errorUtils";
 
 // --- Helper Functions ---
 const getAllFilePathsRecursive = async (
@@ -52,12 +54,7 @@ const getAllFilePathsRecursive = async (
   return filePaths;
 };
 
-const errorMessageToString = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-};
+// Note: Using shared errorUtils.getErrorMessage instead
 
 // --- Type Definitions ---
 // Added optional chatFolderName
@@ -105,11 +102,9 @@ function ChatListPage({ user }: { user: AppUser }) {
   const [allParsedMessages, setAllParsedMessages] = useState<
     GlobalSearchResult[]
   >([]);
-  const [myUsername, setMyUsername] = useState<string>("");
-  const [isUserApproved, setIsUserApproved] = useState<boolean>(false);
-
-  // Ref for debouncing Firestore writes
-  const usernameWriteTimeout = useRef<NodeJS.Timeout | null>(null);
+  const myUsername = useUsername(user); // Use custom hook
+  const isUserApproved = useUserApproval(user); // Use custom hook
+  const { inputValue: usernameInputValue, handleUsernameChange } = useUsernameInput(user, myUsername);
 
   const listenerFetchInProgress = useRef(false);
   const prevChatFoldersString = useRef<string | null>(null); // Store previous folders string
@@ -147,7 +142,7 @@ function ChatListPage({ user }: { user: AppUser }) {
       setFolderListError(null);
     } catch (err) {
       console.error("Failed to list folders from Storage:", err);
-      setFolderListError(errorMessageToString(err));
+      setFolderListError(getErrorMessage(err));
     } finally {
       setLoadingFolders(false);
       setIsRefreshingFolders(false);
@@ -323,94 +318,6 @@ function ChatListPage({ user }: { user: AppUser }) {
     );
   }, [chatFolders, chatListFilter]);
 
-  // --- Username & Approval Status Fetch/Update Logic ---
-  useEffect(() => {
-    if (!user) return;
-    
-    if (isLocalUser(user)) {
-      // For local users, get username from local storage
-      const localStorageManager = LocalStorageManager.getInstance();
-      const localUsername = localStorageManager.getUsername();
-      setMyUsername(localUsername);
-      setIsUserApproved(true); // Local users are always approved
-      return;
-    }
-    
-    // For Firebase users, use Firestore
-    console.log("Looking for settings for uid=", user.uid);
-    const settingsDocRef = doc(db, `userSettings/${user.uid}`);
-    const unsubscribe = onSnapshot(
-      settingsDocRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const settingsData = docSnap.data();
-          const firestoreUsername = settingsData.selectedUsername || "";
-          const firestoreApproval = settingsData.isApproved === true; // Check for explicit true
-
-          // Update local username state if different
-          setMyUsername((currentLocalUsername) => {
-            if (currentLocalUsername !== firestoreUsername) {
-              return firestoreUsername;
-            }
-            return currentLocalUsername;
-          });
-          console.log("Got user settings", settingsData);
-          // Update approval state
-          setIsUserApproved(firestoreApproval);
-        } else {
-          // Reset if settings doc doesn't exist
-          console.log("User settings not found");
-          setMyUsername("");
-          setIsUserApproved(false);
-        }
-      },
-      (error) => {
-        console.error("Error listening to user settings:", error);
-        // Reset on error
-        setMyUsername("");
-        setIsUserApproved(false);
-      }
-    );
-    return () => unsubscribe();
-  }, [user]);
-
-  // Handle username input change with debounced write
-  const handleUsernameChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const newUsername = event.target.value;
-    setMyUsername(newUsername); // Update local state immediately
-
-    // Clear existing debounce timeout
-    if (usernameWriteTimeout.current) {
-      clearTimeout(usernameWriteTimeout.current);
-    }
-
-    // Set new timeout to write after delay
-    usernameWriteTimeout.current = setTimeout(async () => {
-      if (!user) return;
-      
-      if (isLocalUser(user)) {
-        // For local users, save to local storage
-        const localStorageManager = LocalStorageManager.getInstance();
-        localStorageManager.setUsername(newUsername);
-        console.log(`Username "${newUsername}" saved to local storage.`);
-      } else {
-        // For Firebase users, save to Firestore
-        console.log(`Debounced: Writing username "${newUsername}" to Firestore`);
-        const settingsDocRef = doc(db, `userSettings/${user.uid}`);
-        try {
-          await setDoc(
-            settingsDocRef,
-            { selectedUsername: newUsername },
-            { merge: true }
-          );
-          console.log("Username updated in Firestore.");
-        } catch (error) {
-          console.error("Failed to update username in Firestore:", error);
-          // Optionally notify user of the error
-        }
-      }
-    }, 750); // 750ms debounce delay
-  };
 
   const handleFileUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     if (!event.target.files || event.target.files.length === 0) {
@@ -468,7 +375,7 @@ function ChatListPage({ user }: { user: AppUser }) {
                 // Handle unsuccessful uploads for this file
                 console.error(`Upload failed for ${file.name}:`, error);
                 setUploadError(
-                  `Upload failed for ${file.name}: ${errorMessageToString(error)}`
+                  `Upload failed for ${file.name}: ${getErrorMessage(error)}`
                 );
                 setCurrentUploadFile(null);
                 setUploading(false);
@@ -497,7 +404,7 @@ function ChatListPage({ user }: { user: AppUser }) {
       }
     } catch (error) {
       console.error("Upload failed:", error);
-      setUploadError(`Upload failed: ${errorMessageToString(error)}`);
+      setUploadError(`Upload failed: ${getErrorMessage(error)}`);
     } finally {
       setUploading(false);
     }
@@ -528,7 +435,7 @@ function ChatListPage({ user }: { user: AppUser }) {
         <input
           id="usernameInputGlobal"
           type="text"
-          value={myUsername}
+          value={usernameInputValue}
           onChange={handleUsernameChange}
           placeholder="Enter your exact chat name"
           list="allParticipantsList" // Add list attribute for datalist
@@ -773,7 +680,7 @@ function ChatViewPage({ user }: { user: AppUser }) {
     : null;
   const navigate = useNavigate();
   const [parsedMessages, setParsedMessages] = useState<ParsedMessage[]>([]);
-  const [myUsername, setMyUsername] = useState<string>("");
+  const myUsername = useUsername(user); // Use custom hook
   const [parsingError, setParsingError] = useState<string | null>(null);
   const [loadingChat, setLoadingChat] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -800,21 +707,13 @@ function ChatViewPage({ user }: { user: AppUser }) {
           rawContent = new TextDecoder().decode(fileBytes);
         }
         
-        console.log(`[ChatViewPage] Raw content length: ${rawContent.length}`);
-        console.log(`[ChatViewPage] Raw content preview (first 200 chars):`, rawContent.substring(0, 200));
-        
         const parsed = parseChatTxt(rawContent);
-        console.log(`[ChatViewPage] Parsed ${parsed.length} messages`);
-        
-        if (parsed.length > 0) {
-          console.log(`[ChatViewPage] First message:`, parsed[0]);
-        }
         
         setParsedMessages(parsed);
       } catch (err) {
         console.error(`Failed to fetch or parse ${folderName}:`, err);
         setParsingError(
-          `Failed to load chat '${folderName}': ${errorMessageToString(err)}`
+          `Failed to load chat '${folderName}': ${getErrorMessage(err)}`
         );
         setParsedMessages([]);
       } finally {
@@ -837,41 +736,6 @@ function ChatViewPage({ user }: { user: AppUser }) {
     };
   }, [chatFolderName, user, fetchAndParseChat]);
 
-  // --- Username Listener ---
-  useEffect(() => {
-    if (!user) return;
-
-    if (isLocalUser(user)) {
-      // For local users, get username from local storage
-      const localStorageManager = LocalStorageManager.getInstance();
-      const localUsername = localStorageManager.getUsername();
-      setMyUsername(localUsername);
-      return;
-    }
-
-    // For Firebase users, use Firestore listener
-    const settingsDocRef = doc(db, `userSettings/${user.uid}`);
-    const unsubscribe = onSnapshot(
-      settingsDocRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          setMyUsername(docSnap.data().selectedUsername || "");
-        } else {
-          setMyUsername(""); // Reset if settings doc doesn't exist
-        }
-      },
-      (error) => {
-        console.error(
-          "Error listening to user settings in ChatViewPage:",
-          error
-        );
-        setMyUsername(""); // Reset on error maybe?
-      }
-    );
-
-    // Cleanup listener
-    return () => unsubscribe();
-  }, [user]); // Depend only on user
 
   const messagesToDisplay = useMemo(() => {
     if (startLineParam) return parsedMessages;
@@ -1003,7 +867,7 @@ function App() {
       },
       (error) => {
         console.error("Auth state error:", error);
-        setAuthError(errorMessageToString(error));
+        setAuthError(getErrorMessage(error));
         setUser(null);
         setLoadingAuth(false);
       }
@@ -1020,7 +884,7 @@ function App() {
       setUser(wrapFirebaseUser(result.user));
     } catch (err) {
       console.error("Login failed:", err);
-      setAuthError(errorMessageToString(err));
+      setAuthError(getErrorMessage(err));
       setAuthMode('select');
     }
   };
@@ -1034,7 +898,7 @@ function App() {
       setAuthMode('local');
     } catch (err) {
       console.error("Local login failed:", err);
-      setAuthError(errorMessageToString(err));
+      setAuthError(getErrorMessage(err));
     }
   };
 
@@ -1051,7 +915,7 @@ function App() {
       setAuthMode('select');
     } catch (err) {
       console.error("Logout failed:", err);
-      setAuthError(errorMessageToString(err));
+      setAuthError(getErrorMessage(err));
     }
   };
 

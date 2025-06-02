@@ -107,16 +107,11 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
   let currentMessageLines: string[] = [];
   let currentMessageStartLine: number | null = null;
 
-  console.log(`[ChatParser] Total lines to process: ${lines.length}`);
-  console.log(`[ChatParser] First 5 lines:`, lines.slice(0, 5));
-
   // Regex to identify the start of *any* message line (standard or system)
   // Used only to group lines, not for deep parsing here. Handles optional LRM.
   // Support multiple date formats: DD/MM/YYYY, D.M.YYYY, DD.MM.YYYY, etc.
   const messageLineStartRegex =
     /^(\u200E)?\[\d{1,2}[.\/]\d{1,2}[.\/]\d{4}, \d{1,2}:\d{2}:\d{2}\]/;
-  
-  console.log(`[ChatParser] Using regex:`, messageLineStartRegex);
 
   const finalizeCurrentMessage = () => {
     if (currentMessageStartLine !== null && currentMessageLines.length > 0) {
@@ -170,10 +165,6 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
       currentMessageStartLine = lineNumber;
       currentMessageLines = [line]; // Start with the first line
       messageStartCount++;
-      
-      if (messageStartCount <= 3) {
-        console.log(`[ChatParser] Message start #${messageStartCount} at line ${lineNumber}: "${line}"`);
-      }
     } else if (currentMessageStartLine !== null) {
       // If it's a continuation line for an active message
       currentMessageLines.push(line);
@@ -186,18 +177,8 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
     // Ignore lines before the first valid message starts
   });
   
-  console.log(`[ChatParser] Found ${messageStartCount} message start lines`);
-  if (firstNonMatchingLines.length > 0) {
-    console.log(`[ChatParser] First non-matching lines:`, firstNonMatchingLines);
-  }
-
   // Finalize the very last message after the loop
   finalizeCurrentMessage();
-
-  console.log(`[ChatParser] Final result: ${messages.length} messages parsed`);
-  if (messages.length > 0) {
-    console.log(`[ChatParser] First message:`, messages[0]);
-  }
 
   return messages;
 };

@@ -3,6 +3,7 @@ import { ref, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebaseConfig"; // Adjust path as needed
 import { AppUser, isLocalUser } from "../userTypes";
 import { LocalStorageManager } from "../localStorageUtils";
+import { getErrorMessage } from "../utils/errorUtils";
 
 interface AttachmentPreviewProps {
   attachmentName: string | null;
@@ -48,8 +49,8 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
       if (localUrl) {
         setUrl(localUrl);
         setIsLoading(false);
+        // Store the URL for cleanup
         return () => {
-          // Clean up the object URL when component unmounts
           URL.revokeObjectURL(localUrl);
         };
       } else {
@@ -76,7 +77,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
       } catch (err) {
         console.error(`Failed to get download URL for ${storagePath}:`, err);
         if (isMounted) {
-          setError(getErrorMessage(err)); // Using global getErrorMessage for now
+          setError(getErrorMessage(err));
           setUrl(null); // Indicate error
         }
       } finally {
@@ -142,17 +143,4 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   }
 };
 
-// Simple error helper (consider moving to utils)
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) {
-    // Customize Firebase storage error messages if needed
-    if ("code" in error && typeof error.code === "string") {
-      if (error.code.includes("storage/object-not-found")) {
-        return "File not found.";
-      }
-      // Add more specific error codes here
-    }
-    return error.message;
-  }
-  return String(error);
-};
+// Note: Using shared errorUtils.getErrorMessage instead

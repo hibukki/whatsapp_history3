@@ -1,11 +1,5 @@
 import JSZip from 'jszip';
-
-export interface LocalUser {
-  uid: string;
-  displayName: string;
-  email: string;
-  isLocal: true;
-}
+import { LocalUser } from './userTypes';
 
 export interface ChatFolder {
   name: string;
@@ -136,20 +130,13 @@ export class LocalStorageManager {
     const userData = this.getUserData();
     const folder = userData.chatFolders[folderName];
     
-    console.log(`[LocalStorage] Getting content for folder: ${folderName}, file: ${fileName}`);
-    console.log(`[LocalStorage] Available folders:`, Object.keys(userData.chatFolders));
-    
     if (!folder) {
       throw new Error(`Chat folder '${folderName}' not found`);
     }
 
-    console.log(`[LocalStorage] Folder found, has extractedContent:`, !!folder.extractedContent);
-    console.log(`[LocalStorage] ExtractedContent length:`, folder.extractedContent?.length || 0);
-
     // We only support _chat.txt for local storage now
     if (fileName === '_chat.txt') {
       if (folder.extractedContent) {
-        console.log(`[LocalStorage] Returning content (first 100 chars):`, folder.extractedContent.substring(0, 100));
         return folder.extractedContent;
       }
       throw new Error(`No chat content found for folder '${folderName}'`);
