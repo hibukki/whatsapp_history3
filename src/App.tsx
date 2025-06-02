@@ -12,8 +12,9 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   signOut,
-  User,
 } from "firebase/auth";
+import { LocalStorageManager } from './localStorageUtils';
+import { AppUser, wrapFirebaseUser, isLocalUser, isFirebaseUser } from './userTypes';
 import {
   ref,
   listAll,
@@ -63,7 +64,7 @@ const errorMessageToString = (error: unknown): string => {
 type GlobalSearchResult = ParsedMessage & { chatFolderName: string };
 
 // Component for the Chat List Page (/)
-function ChatListPage({ user }: { user: User }) {
+function ChatListPage({ user }: { user: AppUser }) {
   const [chatFolders, setChatFolders] = useState<string[]>([]);
   const [loadingFolders, setLoadingFolders] = useState<boolean>(true);
   const [isRefreshingFolders, setIsRefreshingFolders] =
@@ -122,42 +123,42 @@ function ChatListPage({ user }: { user: User }) {
   }, [allParsedMessages]); // Recompute only when all messages change
 
   // --- Function to fetch Folders from STORAGE ---
-  const fetchFoldersFromStorage = useCallback(async (userId: string) => {
-    const wasInitiallyEmpty = chatFolders.length === 0;
-    if (wasInitiallyEmpty) {
-      setLoadingFolders(true);
-    } else {
-      setIsRefreshingFolders(true);
-    }
+  const fetchFoldersFromStorage = useCallback(async (user: AppUser) => {
+    setLoadingFolders(true);
+    setIsRefreshingFolders(true);
 
-    const chatsListRef = ref(storage, `user/${userId}/chats`);
     try {
-      const resFolders = await listAll(chatsListRef);
-      const newFolders = resFolders.prefixes
-        .map((prefixRef) => prefixRef.name)
-        .sort();
-
-      const currentFoldersString = JSON.stringify(chatFolders.sort());
-      const newFoldersString = JSON.stringify(newFolders);
-
-      if (newFoldersString !== currentFoldersString) {
-        setChatFolders(newFolders);
+      let newFolders: string[] = [];
+      
+      if (isLocalUser(user)) {
+        // Fetch from local storage
+        const localStorageManager = LocalStorageManager.getInstance();
+        newFolders = localStorageManager.getChatFolderNames();
+      } else {
+        // Fetch from Firebase storage
+        const chatsListRef = ref(storage, `user/${user.uid}/chats`);
+        const resFolders = await listAll(chatsListRef);
+        newFolders = resFolders.prefixes
+          .map((prefixRef) => prefixRef.name)
+          .sort();
       }
+
+      setChatFolders(newFolders);
       setFolderListError(null);
     } catch (err) {
       console.error("Failed to list folders from Storage:", err);
       setFolderListError(errorMessageToString(err));
     } finally {
-      if (wasInitiallyEmpty) setLoadingFolders(false);
+      setLoadingFolders(false);
       setIsRefreshingFolders(false);
       listenerFetchInProgress.current = false;
     }
-  }, []);
+  }, []); // Empty deps is correct - this function doesn't need to read any state, only sets it
 
   // --- Initial Fetch folders from Storage ---
   useEffect(() => {
     if (user) {
-      fetchFoldersFromStorage(user.uid);
+      fetchFoldersFromStorage(user);
     }
     return () => {
       setChatFolders([]);
@@ -168,9 +169,9 @@ function ChatListPage({ user }: { user: User }) {
     };
   }, [user, fetchFoldersFromStorage]);
 
-  // --- Firestore Listener for REFRESH Trigger ---
+  // --- Firestore Listener for REFRESH Trigger (Firebase users only) ---
   useEffect(() => {
-    if (!user) return;
+    if (!user || isLocalUser(user)) return;
     const cacheCollectionRef = collection(
       db,
       `users/${user.uid}/chatFoldersCache`
@@ -184,7 +185,7 @@ function ChatListPage({ user }: { user: User }) {
           return;
         }
         listenerFetchInProgress.current = true;
-        fetchFoldersFromStorage(user.uid);
+        fetchFoldersFromStorage(user);
       },
       (error) => {
         console.error("Firestore listener error (refresh trigger):", error);
@@ -194,7 +195,7 @@ function ChatListPage({ user }: { user: User }) {
       unsubscribe();
       listenerFetchInProgress.current = false;
     };
-  }, [user]);
+  }, [user, fetchFoldersFromStorage]);
 
   // --- Function to fetch DEBUG file lists (Moved to component scope) ---
   const fetchDebugLists = async (userId: string) => {
@@ -220,7 +221,7 @@ function ChatListPage({ user }: { user: User }) {
 
   // Fetch and parse *all* chats for global search
   const fetchAndParseAllChats = useCallback(
-    async (userId: string, folders: string[]) => {
+    async (user: AppUser, folders: string[]) => {
       setIsGlobalSearching(true);
       setGlobalSearchError(null);
       setGlobalSearchResults([]); // Clear previous results
@@ -228,11 +229,21 @@ function ChatListPage({ user }: { user: User }) {
 
       try {
         const promises = folders.map(async (folderName) => {
-          const chatFilePath = `user/${userId}/chats/${folderName}/_chat.txt`;
-          const chatFileRef = ref(storage, chatFilePath);
           try {
-            const fileBytes = await getBytes(chatFileRef);
-            const rawContent = new TextDecoder().decode(fileBytes);
+            let rawContent: string;
+            
+            if (isLocalUser(user)) {
+              // Fetch from local storage
+              const localStorageManager = LocalStorageManager.getInstance();
+              rawContent = await localStorageManager.getChatFileContent(folderName);
+            } else {
+              // Fetch from Firebase storage
+              const chatFilePath = `user/${user.uid}/chats/${folderName}/_chat.txt`;
+              const chatFileRef = ref(storage, chatFilePath);
+              const fileBytes = await getBytes(chatFileRef);
+              rawContent = new TextDecoder().decode(fileBytes);
+            }
+            
             const parsed = parseChatTxt(rawContent);
             // Add folderName to each message
             return parsed.map((msg) => ({
@@ -252,10 +263,6 @@ function ChatListPage({ user }: { user: User }) {
         console.log(
           `Fetched and parsed ${allMessages.length} total messages from ${folders.length} chats.`
         );
-        // Trigger initial search if term already exists
-        if (globalSearchTerm) {
-          setGlobalSearchResults(searchMessages(allMessages, globalSearchTerm));
-        }
       } catch (err) {
         // Catch errors from Promise.all itself (unlikely here)
         console.error("Error fetching all chats:", err);
@@ -266,7 +273,7 @@ function ChatListPage({ user }: { user: User }) {
         setIsGlobalSearching(false);
       }
     },
-    [globalSearchTerm]
+    [] // Remove globalSearchTerm dependency to prevent loops
   );
 
   // Fetch all chats effect - check for folder content change
@@ -279,7 +286,7 @@ function ChatListPage({ user }: { user: User }) {
       !isGlobalSearching &&
       currentFoldersString !== prevChatFoldersString.current
     ) {
-      fetchAndParseAllChats(user.uid, chatFolders);
+      fetchAndParseAllChats(user, chatFolders);
       prevChatFoldersString.current = currentFoldersString;
     } else if (
       chatFolders.length === 0 &&
@@ -319,6 +326,17 @@ function ChatListPage({ user }: { user: User }) {
   // --- Username & Approval Status Fetch/Update Logic ---
   useEffect(() => {
     if (!user) return;
+    
+    if (isLocalUser(user)) {
+      // For local users, get username from local storage
+      const localStorageManager = LocalStorageManager.getInstance();
+      const localUsername = localStorageManager.getUsername();
+      setMyUsername(localUsername);
+      setIsUserApproved(true); // Local users are always approved
+      return;
+    }
+    
+    // For Firebase users, use Firestore
     console.log("Looking for settings for uid=", user.uid);
     const settingsDocRef = doc(db, `userSettings/${user.uid}`);
     const unsubscribe = onSnapshot(
@@ -356,7 +374,7 @@ function ChatListPage({ user }: { user: User }) {
     return () => unsubscribe();
   }, [user]);
 
-  // Handle username input change with debounced Firestore write
+  // Handle username input change with debounced write
   const handleUsernameChange = (event: ChangeEvent<HTMLInputElement>) => {
     const newUsername = event.target.value;
     setMyUsername(newUsername); // Update local state immediately
@@ -366,21 +384,30 @@ function ChatListPage({ user }: { user: User }) {
       clearTimeout(usernameWriteTimeout.current);
     }
 
-    // Set new timeout to write to Firestore after delay (e.g., 500ms)
+    // Set new timeout to write after delay
     usernameWriteTimeout.current = setTimeout(async () => {
       if (!user) return;
-      console.log(`Debounced: Writing username "${newUsername}" to Firestore`);
-      const settingsDocRef = doc(db, `userSettings/${user.uid}`);
-      try {
-        await setDoc(
-          settingsDocRef,
-          { selectedUsername: newUsername },
-          { merge: true }
-        );
-        console.log("Username updated in Firestore.");
-      } catch (error) {
-        console.error("Failed to update username in Firestore:", error);
-        // Optionally notify user of the error
+      
+      if (isLocalUser(user)) {
+        // For local users, save to local storage
+        const localStorageManager = LocalStorageManager.getInstance();
+        localStorageManager.setUsername(newUsername);
+        console.log(`Username "${newUsername}" saved to local storage.`);
+      } else {
+        // For Firebase users, save to Firestore
+        console.log(`Debounced: Writing username "${newUsername}" to Firestore`);
+        const settingsDocRef = doc(db, `userSettings/${user.uid}`);
+        try {
+          await setDoc(
+            settingsDocRef,
+            { selectedUsername: newUsername },
+            { merge: true }
+          );
+          console.log("Username updated in Firestore.");
+        } catch (error) {
+          console.error("Failed to update username in Firestore:", error);
+          // Optionally notify user of the error
+        }
       }
     }, 750); // 750ms debounce delay
   };
@@ -399,76 +426,81 @@ function ChatListPage({ user }: { user: User }) {
     setTotalFilesToUpload(totalFiles);
     setFilesUploaded(0);
 
-    for (let i = 0; i < totalFiles; i++) {
-      const file = filesToUpload[i];
-      const currentFileNumber = i + 1;
-      setCurrentUploadFile(`${file.name} (${currentFileNumber}/${totalFiles})`);
-      console.log(
-        `Uploading file ${currentFileNumber}/${totalFiles}: ${file.name}`
-      );
+    try {
+      if (isLocalUser(user)) {
+        // Handle local storage upload
+        setCurrentUploadFile(`Processing ${totalFiles} file(s) locally...`);
+        const localStorageManager = LocalStorageManager.getInstance();
+        await localStorageManager.uploadChatFiles(filesToUpload);
+        setFilesUploaded(totalFiles);
+        setUploadProgress(100);
+        console.log("All files processed and stored locally!");
+        // Refresh the folder list
+        await fetchFoldersFromStorage(user);
+      } else {
+        // Handle Firebase storage upload
+        for (let i = 0; i < totalFiles; i++) {
+          const file = filesToUpload[i];
+          const currentFileNumber = i + 1;
+          setCurrentUploadFile(`${file.name} (${currentFileNumber}/${totalFiles})`);
+          console.log(
+            `Uploading file ${currentFileNumber}/${totalFiles}: ${file.name}`
+          );
 
-      const storagePath = `user/${user.uid}/uploads/${file.name}`;
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, file);
+          const storagePath = `user/${user.uid}/uploads/${file.name}`;
+          const storageRef = ref(storage, storagePath);
+          const uploadTask = uploadBytesResumable(storageRef, file);
 
-      // Use a promise to wait for each upload to complete
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          "state_changed",
-          (snapshot: UploadTaskSnapshot) => {
-            // Calculate progress for the current file (optional to display granularly)
-            // const fileProgress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; // Removed unused variable
-            // console.log(`Upload progress for ${file.name}: ${fileProgress}%`);
-
-            // Calculate overall progress based on files completed + current file progress
-            const overallProgress =
-              ((filesUploaded +
-                snapshot.bytesTransferred / snapshot.totalBytes) /
-                totalFiles) *
-              100;
-            setUploadProgress(overallProgress);
-          },
-          (error) => {
-            // Handle unsuccessful uploads for this file
-            console.error(`Upload failed for ${file.name}:`, error);
-            // We could collect errors and show them at the end
-            // For now, we'll set a general error and stop further uploads
-            setUploadError(
-              `Upload failed for ${file.name}: ${errorMessageToString(error)}`
+          // Use a promise to wait for each upload to complete
+          await new Promise<void>((resolve, reject) => {
+            uploadTask.on(
+              "state_changed",
+              (snapshot: UploadTaskSnapshot) => {
+                // Calculate overall progress based on files completed + current file progress
+                const overallProgress =
+                  ((filesUploaded +
+                    snapshot.bytesTransferred / snapshot.totalBytes) /
+                    totalFiles) *
+                  100;
+                setUploadProgress(overallProgress);
+              },
+              (error) => {
+                // Handle unsuccessful uploads for this file
+                console.error(`Upload failed for ${file.name}:`, error);
+                setUploadError(
+                  `Upload failed for ${file.name}: ${errorMessageToString(error)}`
+                );
+                setCurrentUploadFile(null);
+                setUploading(false);
+                reject(error);
+              },
+              () => {
+                // Handle successful uploads on complete
+                console.log(`${file.name} uploaded successfully.`);
+                setFilesUploaded((prev) => prev + 1);
+                resolve();
+              }
             );
-            setCurrentUploadFile(null); // Clear current file
-            setUploading(false); // Stop overall upload process on first error
-            reject(error); // Reject the promise to break the loop
-          },
-          () => {
-            // Handle successful uploads on complete
-            console.log(`${file.name} uploaded successfully.`);
-            setFilesUploaded((prev) => prev + 1); // Increment completed count *after* success
-            resolve(); // Resolve the promise to continue to the next file
+          });
+
+          // If an error occurred in the promise, stop the loop
+          if (uploadError) {
+            break;
           }
-        );
-      });
-
-      // If an error occurred in the promise, stop the loop
-      if (uploadError) {
-        break;
+        }
       }
-    }
 
-    // After the loop finishes (or breaks due to error)
-    if (!uploadError) {
-      console.log("All files uploaded successfully!");
-      setCurrentUploadFile(null);
-      // Optionally trigger a refresh or show a success message
-      // fetchLists(user.uid);
+      // After the loop finishes (or breaks due to error)
+      if (!uploadError) {
+        console.log("All files uploaded successfully!");
+        setCurrentUploadFile(null);
+      }
+    } catch (error) {
+      console.error("Upload failed:", error);
+      setUploadError(`Upload failed: ${errorMessageToString(error)}`);
+    } finally {
+      setUploading(false);
     }
-    setUploading(false);
-    // Reset progress slightly after completion/error
-    // setTimeout(() => {
-    //    setUploadProgress(0);
-    //    setTotalFilesToUpload(0);
-    //    setFilesUploaded(0);
-    // }, 3000); // Clear after 3 seconds
   };
 
   // Handle clicking on a global search result
@@ -555,6 +587,7 @@ function ChatListPage({ user }: { user: User }) {
                 myUsername={myUsername}
                 userId={user.uid}
                 chatFolderName={message.chatFolderName}
+                user={user}
                 onClick={() => handleGlobalResultClick(message)}
                 isClickable={true}
               />
@@ -730,7 +763,7 @@ function ChatListPage({ user }: { user: User }) {
 }
 
 // --- ChatViewPage Component (Restored) ---
-function ChatViewPage({ user }: { user: User }) {
+function ChatViewPage({ user }: { user: AppUser }) {
   const { chatFolderName: encodedChatFolderName, startLineParam } = useParams<{
     chatFolderName: string;
     startLineParam?: string;
@@ -747,20 +780,39 @@ function ChatViewPage({ user }: { user: User }) {
   const messageListRef = useRef<HTMLDivElement>(null);
 
   const fetchAndParseChat = useCallback(
-    async (userId: string, folderName: string) => {
-      const chatFilePath = `user/${userId}/chats/${folderName}/_chat.txt`;
-      const chatFileRef = ref(storage, chatFilePath);
+    async (user: AppUser, folderName: string) => {
       setParsedMessages([]);
       setParsingError(null);
       setLoadingChat(true);
-      console.log(`Fetching and parsing: ${chatFilePath}`);
+      console.log(`Fetching and parsing chat: ${folderName}`);
       try {
-        const fileBytes = await getBytes(chatFileRef);
-        const rawContent = new TextDecoder().decode(fileBytes);
+        let rawContent: string;
+        
+        if (isLocalUser(user)) {
+          // Fetch from local storage
+          const localStorageManager = LocalStorageManager.getInstance();
+          rawContent = await localStorageManager.getChatFileContent(folderName);
+        } else {
+          // Fetch from Firebase storage
+          const chatFilePath = `user/${user.uid}/chats/${folderName}/_chat.txt`;
+          const chatFileRef = ref(storage, chatFilePath);
+          const fileBytes = await getBytes(chatFileRef);
+          rawContent = new TextDecoder().decode(fileBytes);
+        }
+        
+        console.log(`[ChatViewPage] Raw content length: ${rawContent.length}`);
+        console.log(`[ChatViewPage] Raw content preview (first 200 chars):`, rawContent.substring(0, 200));
+        
         const parsed = parseChatTxt(rawContent);
+        console.log(`[ChatViewPage] Parsed ${parsed.length} messages`);
+        
+        if (parsed.length > 0) {
+          console.log(`[ChatViewPage] First message:`, parsed[0]);
+        }
+        
         setParsedMessages(parsed);
       } catch (err) {
-        console.error(`Failed to fetch or parse ${chatFilePath}:`, err);
+        console.error(`Failed to fetch or parse ${folderName}:`, err);
         setParsingError(
           `Failed to load chat '${folderName}': ${errorMessageToString(err)}`
         );
@@ -774,7 +826,7 @@ function ChatViewPage({ user }: { user: User }) {
 
   useEffect(() => {
     if (chatFolderName && user) {
-      fetchAndParseChat(user.uid, chatFolderName);
+      fetchAndParseChat(user, chatFolderName);
     } else {
       setLoadingChat(false);
       setParsingError("Chat folder name missing in URL.");
@@ -789,6 +841,15 @@ function ChatViewPage({ user }: { user: User }) {
   useEffect(() => {
     if (!user) return;
 
+    if (isLocalUser(user)) {
+      // For local users, get username from local storage
+      const localStorageManager = LocalStorageManager.getInstance();
+      const localUsername = localStorageManager.getUsername();
+      setMyUsername(localUsername);
+      return;
+    }
+
+    // For Firebase users, use Firestore listener
     const settingsDocRef = doc(db, `userSettings/${user.uid}`);
     const unsubscribe = onSnapshot(
       settingsDocRef,
@@ -892,6 +953,7 @@ function ChatViewPage({ user }: { user: User }) {
                 myUsername={myUsername}
                 userId={user.uid}
                 chatFolderName={chatFolderName || ""}
+                user={user}
                 onClick={() => handleMessageClick(message)}
                 isClickable={!!searchTerm}
               />
@@ -909,15 +971,32 @@ function ChatViewPage({ user }: { user: User }) {
 
 // --- Main App Component (Restored) ---
 function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [loadingAuth, setLoadingAuth] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<'select' | 'firebase' | 'local'>('select');
 
   useEffect(() => {
+    // Check for existing local user
+    const localStorageManager = LocalStorageManager.getInstance();
+    const existingLocalUser = localStorageManager.getLocalUser();
+    
+    if (existingLocalUser) {
+      setUser(existingLocalUser);
+      setAuthMode('local');
+      setLoadingAuth(false);
+      return;
+    }
+
+    // Set up Firebase auth listener
     const unsubscribe = onAuthStateChanged(
       auth,
       (currentUser) => {
-        setUser(currentUser);
+        if (currentUser && authMode === 'firebase') {
+          setUser(wrapFirebaseUser(currentUser));
+        } else if (!currentUser) {
+          setUser(null);
+        }
         setLoadingAuth(false);
         setAuthError(null);
         console.log("Auth state changed:", currentUser);
@@ -930,15 +1009,31 @@ function App() {
       }
     );
     return () => unsubscribe();
-  }, []);
+  }, [authMode]);
 
-  const handleLogin = async () => {
+  const handleFirebaseLogin = async () => {
     const provider = new GoogleAuthProvider();
     setAuthError(null);
+    setAuthMode('firebase');
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      setUser(wrapFirebaseUser(result.user));
     } catch (err) {
       console.error("Login failed:", err);
+      setAuthError(errorMessageToString(err));
+      setAuthMode('select');
+    }
+  };
+
+  const handleLocalLogin = async (displayName: string) => {
+    setAuthError(null);
+    try {
+      const localStorageManager = LocalStorageManager.getInstance();
+      const localUser = localStorageManager.createLocalUser(displayName);
+      setUser(localUser);
+      setAuthMode('local');
+    } catch (err) {
+      console.error("Local login failed:", err);
       setAuthError(errorMessageToString(err));
     }
   };
@@ -946,11 +1041,89 @@ function App() {
   const handleLogout = async () => {
     setAuthError(null);
     try {
-      await signOut(auth);
+      if (user && isFirebaseUser(user)) {
+        await signOut(auth);
+      } else if (user && isLocalUser(user)) {
+        const localStorageManager = LocalStorageManager.getInstance();
+        localStorageManager.clearLocalUser();
+      }
+      setUser(null);
+      setAuthMode('select');
     } catch (err) {
       console.error("Logout failed:", err);
       setAuthError(errorMessageToString(err));
     }
+  };
+
+  const ModeSelection = () => {
+    const [localUserName, setLocalUserName] = useState('');
+    
+    return (
+      <div style={{ maxWidth: '500px', margin: '50px auto', padding: '20px' }}>
+        <h2>Choose How to Use WhatsApp History Viewer</h2>
+        
+        <div style={{ 
+          border: '1px solid #ccc', 
+          borderRadius: '8px', 
+          padding: '20px', 
+          margin: '20px 0',
+          backgroundColor: '#f8f9fa'
+        }}>
+          <h3>🏠 Local Mode (Recommended for Privacy)</h3>
+          <p>Your chat files stay on your device. No data is uploaded to any server.</p>
+          <ul>
+            <li>✅ Maximum privacy - files never leave your device</li>
+            <li>✅ No server approval needed</li>
+            <li>⚠️ Data only available on this device/browser</li>
+            <li>⚠️ Limited by browser storage capacity</li>
+          </ul>
+          <div style={{ marginTop: '15px' }}>
+            <input
+              type="text"
+              placeholder="Enter your name"
+              value={localUserName}
+              onChange={(e) => setLocalUserName(e.target.value)}
+              style={{ padding: '8px', marginRight: '10px', width: '200px' }}
+            />
+            <button 
+              onClick={() => handleLocalLogin(localUserName)}
+              disabled={!localUserName.trim()}
+              style={{ padding: '8px 16px' }}
+            >
+              Use Local Mode
+            </button>
+          </div>
+        </div>
+
+        <div style={{ 
+          border: '1px solid #ccc', 
+          borderRadius: '8px', 
+          padding: '20px', 
+          margin: '20px 0' 
+        }}>
+          <h3>☁️ Cloud Mode (Firebase)</h3>
+          <p>Upload files to Firebase storage for access from any device.</p>
+          <ul>
+            <li>✅ Access from any device</li>
+            <li>✅ No storage limits</li>
+            <li>⚠️ Files uploaded to Firebase servers</li>
+            <li>⚠️ Requires server approval for uploads</li>
+          </ul>
+          <button 
+            onClick={handleFirebaseLogin}
+            style={{ padding: '8px 16px', marginTop: '10px' }}
+          >
+            Sign in with Google
+          </button>
+        </div>
+        
+        {authError && (
+          <p style={{ color: 'red', marginTop: '10px' }}>
+            Error: {authError}
+          </p>
+        )}
+      </div>
+    );
   };
 
   if (loadingAuth) {
@@ -961,13 +1134,15 @@ function App() {
     <div className="App">
       <header className="app-header">
         <h1>WhatsApp History Viewer</h1>
-        {user && <p>Welcome, {user.displayName || user.email}!</p>}
-        {user ? (
-          <button onClick={handleLogout}>Logout</button>
-        ) : (
-          <button onClick={handleLogin}>Login with Google</button>
+        {user && (
+          <div>
+            <p>Welcome, {user.displayName}! 
+              {isLocalUser(user) ? ' (Local Mode)' : ' (Cloud Mode)'}
+            </p>
+            <button onClick={handleLogout}>Logout</button>
+          </div>
         )}
-        {authError && <p style={{ color: "red" }}>Auth Error: {authError}</p>}
+        {authError && user && <p style={{ color: "red" }}>Auth Error: {authError}</p>}
       </header>
       <main>
         {user ? (
@@ -984,9 +1159,7 @@ function App() {
             <Route path="*" element={<div>Page Not Found</div>} />
           </Routes>
         ) : (
-          <div>
-            <p>Please log in to view and upload your chat history.</p>
-          </div>
+          <ModeSelection />
         )}
       </main>
     </div>

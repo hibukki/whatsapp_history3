@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { ref, getDownloadURL } from "firebase/storage";
 import { storage } from "../firebaseConfig"; // Adjust path as needed
+import { AppUser, isLocalUser } from "../userTypes";
+import { LocalStorageManager } from "../localStorageUtils";
 
 interface AttachmentPreviewProps {
   attachmentName: string | null;
-  userId: string; // Need user ID
+  userId: string; // Need user ID  
   chatFolderName: string; // Need folder name
-  // Consider passing getDownloadURL function or using context if preferred
+  user?: AppUser; // Optional: if not provided, assumes Firebase user for backward compatibility
 }
 
 // Helper to check if filename is an image (could be moved to utils)
@@ -22,16 +24,40 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
   attachmentName,
   userId,
   chatFolderName,
+  user,
 }) => {
   const [url, setUrl] = useState<string | null | undefined>(undefined); // undefined = not yet fetched
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Check if this is a local user
+  const isLocal = user && isLocalUser(user);
 
   useEffect(() => {
     let isMounted = true; // Prevent state update on unmounted component
     if (!attachmentName || !userId || !chatFolderName) {
       setUrl(null); // Nothing to fetch
       return;
+    }
+
+    // For local users, get attachment from local storage
+    if (isLocal) {
+      const localStorageManager = LocalStorageManager.getInstance();
+      const localUrl = localStorageManager.createAttachmentURL(chatFolderName, attachmentName);
+      
+      if (localUrl) {
+        setUrl(localUrl);
+        setIsLoading(false);
+        return () => {
+          // Clean up the object URL when component unmounts
+          URL.revokeObjectURL(localUrl);
+        };
+      } else {
+        setError(`Attachment "${attachmentName}" not found in local storage`);
+        setUrl(null);
+        setIsLoading(false);
+        return;
+      }
     }
 
     const storagePath = `user/${userId}/chats/${chatFolderName}/${attachmentName}`;
@@ -65,7 +91,7 @@ export const AttachmentPreview: React.FC<AttachmentPreviewProps> = ({
     return () => {
       isMounted = false;
     }; // Cleanup function
-  }, [attachmentName, userId, chatFolderName]);
+  }, [attachmentName, userId, chatFolderName, isLocal]);
 
   if (!attachmentName) return null;
 

@@ -1,12 +1,14 @@
 import React from "react";
 import { ParsedMessage } from "../chatParser";
 import { AttachmentPreview } from "./AttachmentPreview"; // Assuming AttachmentPreview is also extracted
+import { AppUser } from "../userTypes";
 
 interface MessageItemProps {
   message: ParsedMessage;
   myUsername: string;
   userId: string; // Added userId
   chatFolderName: string; // Added chatFolderName
+  user: AppUser; // Add user object for attachment handling
   onClick?: () => void; // Make onClick optional
   isClickable?: boolean; // Explicit prop to control cursor/title
 }
@@ -16,6 +18,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   myUsername,
   userId, // Destructure added prop
   chatFolderName, // Destructure added prop
+  user, // Destructure user prop
   onClick,
   isClickable,
 }) => {
@@ -45,6 +48,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               attachmentName={message.attachment}
               userId={userId} // Pass userId down
               chatFolderName={chatFolderName} // Pass chatFolderName down
+              user={user} // Pass user object down
             />
           )}
         </div>

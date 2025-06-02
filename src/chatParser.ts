@@ -46,13 +46,14 @@ const extractMessageMetadata = (
 ): { timestamp: string | null; sender: string | null; remaining: string } => {
   // Regex V1: Matches [TIMESTAMP] SENDER: [optional LRM]CONTENT
   // Captures: 1:Timestamp, 2:Sender, 3:Optional LRM, 4:Initial Content
+  // Support multiple date formats: DD/MM/YYYY, D.M.YYYY, DD.MM.YYYY, etc.
   const messageStartRegex =
-    /^\[(\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2})\] (.*?):\s?(\u200E)?(.*)/s; // Added \s?(\u200E)?
+    /^\[(\d{1,2}[.\/]\d{1,2}[.\/]\d{4}, \d{1,2}:\d{2}:\d{2})\] (.*?):\s?(\u200E)?(.*)/s;
 
   // Regex V2: Matches [TIMESTAMP] [optional LRM]CONTENT (System message)
   // Captures: 1:Timestamp, 2:Optional LRM, 3:Initial Content
   const systemMessageRegex =
-    /^\[(\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2})\]\s?(\u200E)?(.*)/s; // Added \s?(\u200E)?
+    /^\[(\d{1,2}[.\/]\d{1,2}[.\/]\d{4}, \d{1,2}:\d{2}:\d{2})\]\s?(\u200E)?(.*)/s;
 
   // Remove potential leading LRM character (U+200E) AND leading/trailing whitespace before matching
   const textToParse = rawMessageText.trim().replace(/^\u200E/, "");
@@ -106,10 +107,16 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
   let currentMessageLines: string[] = [];
   let currentMessageStartLine: number | null = null;
 
+  console.log(`[ChatParser] Total lines to process: ${lines.length}`);
+  console.log(`[ChatParser] First 5 lines:`, lines.slice(0, 5));
+
   // Regex to identify the start of *any* message line (standard or system)
   // Used only to group lines, not for deep parsing here. Handles optional LRM.
+  // Support multiple date formats: DD/MM/YYYY, D.M.YYYY, DD.MM.YYYY, etc.
   const messageLineStartRegex =
-    /^(\u200E)?\[\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}:\d{2}\]/;
+    /^(\u200E)?\[\d{1,2}[.\/]\d{1,2}[.\/]\d{4}, \d{1,2}:\d{2}:\d{2}\]/;
+  
+  console.log(`[ChatParser] Using regex:`, messageLineStartRegex);
 
   const finalizeCurrentMessage = () => {
     if (currentMessageStartLine !== null && currentMessageLines.length > 0) {
@@ -150,6 +157,9 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
   };
 
   // --- Line Grouping Loop ---
+  let messageStartCount = 0;
+  let firstNonMatchingLines: string[] = [];
+  
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
 
@@ -159,15 +169,35 @@ export const parseChatTxt = (rawContent: string): ParsedMessage[] => {
       // Start the new message
       currentMessageStartLine = lineNumber;
       currentMessageLines = [line]; // Start with the first line
+      messageStartCount++;
+      
+      if (messageStartCount <= 3) {
+        console.log(`[ChatParser] Message start #${messageStartCount} at line ${lineNumber}: "${line}"`);
+      }
     } else if (currentMessageStartLine !== null) {
       // If it's a continuation line for an active message
       currentMessageLines.push(line);
+    } else {
+      // Lines before first message or lines that don't match
+      if (firstNonMatchingLines.length < 10) {
+        firstNonMatchingLines.push(`Line ${lineNumber}: "${line}"`);
+      }
     }
     // Ignore lines before the first valid message starts
   });
+  
+  console.log(`[ChatParser] Found ${messageStartCount} message start lines`);
+  if (firstNonMatchingLines.length > 0) {
+    console.log(`[ChatParser] First non-matching lines:`, firstNonMatchingLines);
+  }
 
   // Finalize the very last message after the loop
   finalizeCurrentMessage();
+
+  console.log(`[ChatParser] Final result: ${messages.length} messages parsed`);
+  if (messages.length > 0) {
+    console.log(`[ChatParser] First message:`, messages[0]);
+  }
 
   return messages;
 };
